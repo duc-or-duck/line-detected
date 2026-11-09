@@ -16,7 +16,7 @@ Seed tái lập là `42` trong YAML và các phép lấy mẫu dùng `numpy.rand
 
 ## Dữ liệu
 
-TuSimple Road đã tải từ [Kaggle](https://www.kaggle.com/datasets/touhidhaider/tusimple-road) vào `dataset/TuSimple-Road/`. Bản nguồn có 3.626 nhãn train và 819 nhãn test; 97 ảnh được tham chiếu trong nhãn train không có trong archive. Các split tiện dùng nằm ở `dataset/train/{images,labels.json}` và `dataset/test/{images,labels.json}`. Split train giữ 3.529 ảnh có sẵn; test có đủ 819 ảnh. Ảnh được hard-link khi cùng ổ đĩa để không nhân đôi dung lượng; dữ liệu lớn nằm trong `.gitignore`.
+TuSimple Road đã tải từ [Kaggle](https://www.kaggle.com/datasets/touhidhaider/tusimple-road) vào `dataset/TuSimple-Road/`. Bản nguồn có 3.626 nhãn train và 819 nhãn test; 97 ảnh được tham chiếu trong nhãn train không có trong archive. Các split tiện dùng nằm ở `dataset/train/{images,labels.json}` và `dataset/test/{images,labels.json}`. Split train giữ 3.529 ảnh có sẵn; test có đủ 819 ảnh. Archive chỉ có ảnh khung cuối dạng phẳng, không có chuỗi 20 khung/clip theo yêu cầu đánh giá; do đó TuSimple test được ghi `n/a` kèm lý do. Ảnh được hard-link khi cùng ổ đĩa để không nhân đôi dung lượng; dữ liệu lớn nằm trong `.gitignore`.
 
 Đặt video dashcam người dùng tự quay hoặc có giấy phép tại:
 
@@ -41,6 +41,15 @@ Demo tương tác:
 python app.py --input data/dashcam/day/<video>.mp4 --method proposed
 python app.py --input data/dashcam/day/<video>.mp4 --method baseline
 ```
+
+Chạy thử clip được cung cấp trong `test_video/`:
+
+```powershell
+python app.py --input "test_video/YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4" --method proposed --config configs/E.yaml --data-source day
+python app.py --input "test_video/YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4" --method baseline --config configs/A.yaml --data-source day
+```
+
+ROI và fit riêng cho `day` là preset demo cho clip này; chúng không được dùng khi đánh giá nguồn `tusimple`. Hiệu chỉnh này chỉ để kiểm tra hình ảnh demo, không thay cho đánh giá định lượng.
 
 Chọn cấu hình hoặc khai báo nguồn hình học homography:
 

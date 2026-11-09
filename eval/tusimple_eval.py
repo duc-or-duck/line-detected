@@ -83,13 +83,19 @@ def evaluate(config: dict, root: Path, labels: list[Path], split: str) -> dict:
     if not labels:
         return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None, "errors_by_sample": [],
                 "reason": "Thiếu tệp nhãn TuSimple"}
+    annotations = read_annotations(labels)
+    if split == "test" and annotations and any(
+            (root / record["raw_file"]).parent.resolve() == root.resolve()
+            for record in annotations):
+        return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None,
+                "errors_by_sample": [],
+                "reason": "Nguồn chỉ chứa ảnh khung cuối dạng phẳng, thiếu chuỗi 20 khung cho mỗi clip"}
     if threshold is None or lane_threshold is None:
         return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None, "errors_by_sample": [],
                 "reason": "Thiếu ngưỡng đánh giá trong YAML"}
     if split == "train" and evaluation.get("tune_samples") is None:
         return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None, "errors_by_sample": [],
                 "reason": "Thiếu cỡ mẫu tuning trong YAML"}
-    annotations = read_annotations(labels)
     if split == "train":
         rng = np.random.default_rng(evaluation.get("seed", 42))
         sample_size = min(int(evaluation["tune_samples"]), len(annotations))
