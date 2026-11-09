@@ -21,11 +21,12 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
                                maxLineGap=int(params["max_line_gap"]))
     height, width = image.shape[:2]
     groups = {"left": [], "right": []}
+    min_abs_slope = config.get("min_abs_slope")
     for x1, y1, x2, y2 in ([] if segments is None else segments[:, 0, :]):
         if x2 == x1:
             continue
         slope = (y2 - y1) / (x2 - x1)
-        if abs(slope) < float(config.get("min_abs_slope", 0)):
+        if min_abs_slope is not None and abs(slope) < float(min_abs_slope):
             continue
         intercept = y1 - slope * x1
         groups["left" if slope < 0 else "right"].append((slope, intercept))

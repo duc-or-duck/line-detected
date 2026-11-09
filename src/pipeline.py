@@ -44,6 +44,8 @@ class LanePipeline:
             found = detect_baseline(frame, preprocess_cfg)
             blocks["preprocess_detection"] = (time.perf_counter() - start) * 1000
             left, right, binary = found["left"], found["right"], found["edges"]
+            if pipeline.get("kalman", False):
+                left, right = self._filter_fits(left, right)
         elif method == "proposed":
             start = time.perf_counter()
             enhanced = enhance(frame, pipeline.get("enhancement"), self.config.get("enhancement", {}))
@@ -120,7 +122,7 @@ class LanePipeline:
     def _offset_velocity(self, left, right, lane_width_m):
         if self.filters is None or left is None or right is None or lane_width_m is None:
             return None
-        center_velocity = (np.sum(self.filters[0].x[3:, 0]) + np.sum(self.filters[1].x[3:, 0])) / 6.0
+        center_velocity = (np.sum(self.filters[0].x[3:, 0]) + np.sum(self.filters[1].x[3:, 0])) / 2.0
         width = float(np.polyval(right, 1) - np.polyval(left, 1))
         return None if width <= 0 else -float(center_velocity) * float(lane_width_m) / width
 
@@ -135,5 +137,5 @@ class LanePipeline:
             cv2.polylines(frame, [left_points], False, (0, 255, 0), 3)
             cv2.polylines(frame, [right_points], False, (0, 255, 0), 3)
         if warning is True:
-            cv2.putText(frame, "LANE DEPARTURE WARNING", (24, 48), cv2.FONT_HERSHEY_SIMPLEX,
+            cv2.putText(frame, "CANH BAO CHECH LAN", (24, 48), cv2.FONT_HERSHEY_SIMPLEX,
                         1.0, (0, 0, 255), 2, cv2.LINE_AA)
