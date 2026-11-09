@@ -14,7 +14,7 @@ from .baseline import detect_baseline
 from .departure import DepartureWarning, calculate_offset
 from .kalman import LaneKalmanFilter
 from .lane_fit import sliding_window_fit
-from .preprocess import canny_edges, enhance, lane_mask, roi_mask
+from .preprocess import canny_edges, lane_mask, roi_mask
 from .warp import unwarp_lane_fit, warp_image
 
 
@@ -57,13 +57,12 @@ class LanePipeline:
             fit_cfg = self.config.get("fit_by_source", {}).get(
                 self.data_source, self.config.get("fit", {}))
             start = time.perf_counter()
-            enhanced = enhance(frame, pipeline.get("enhancement"), self.config.get("enhancement", {}))
             if pipeline.get("color_threshold", False):
-                colors = lane_mask(enhanced, preprocess_cfg)
-                edges = canny_edges(enhanced, preprocess_cfg)
+                colors = lane_mask(frame, preprocess_cfg)
+                edges = canny_edges(frame, preprocess_cfg)
                 binary = cv2.bitwise_or(colors, edges)
             else:
-                gray = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 binary = cv2.Canny(gray, int(preprocess_cfg.get("canny_low", 50)),
                                    int(preprocess_cfg.get("canny_high", 150)))
             if pipeline.get("roi", False):

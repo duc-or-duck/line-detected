@@ -7,7 +7,6 @@ data:
   night: data/dashcam/night
   rain: data/dashcam/rain
 pipeline:
-  enhancement: none
   color_threshold: true
   roi: true
   perspective: true
@@ -40,13 +39,6 @@ preprocess:
   - 35
   yellow_s_min: 100
   white_l_min: 200
-  gradient_channel: L
-  gradient_threshold: null
-enhancement:
-  gamma: null
-  log_scale: null
-  clahe_clip_limit: null
-  clahe_tile_grid_size: null
 homography:
   culane:
     source: null
