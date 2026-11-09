@@ -26,3 +26,6 @@ Thumbs.db
 
 # Generated files
 *.log
+
+# Downloaded datasets
+dataset/

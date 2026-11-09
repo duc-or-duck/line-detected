@@ -16,7 +16,7 @@ Seed tái lập là `42` trong YAML và các phép lấy mẫu dùng `numpy.rand
 
 ## Dữ liệu
 
-Không có dữ liệu được tải tự động. Có thể tải bộ dữ liệu TuSimple từ [Kaggle: TuSimple Road](https://www.kaggle.com/datasets/touhidhaider/tusimple-road) hoặc tham khảo [TuSimple lane detection benchmark](https://github.com/TuSimple/tusimple-benchmark). Sau khi tải và giải nén, đặt ảnh và tệp nhãn dưới `data/tusimple/`; các lệnh bên dưới giả định có `train_set/label_data.json` và `test_set/test_label.json`. Cấu trúc archive Kaggle chưa được xác nhận, nên đối chiếu tên tệp sau khi giải nén và truyền đúng đường dẫn bằng `--root` và `--labels`.
+TuSimple Road đã tải từ [Kaggle](https://www.kaggle.com/datasets/touhidhaider/tusimple-road) vào `dataset/TuSimple-Road/`. Bản nguồn có 3.626 nhãn train và 819 nhãn test; 97 ảnh được tham chiếu trong nhãn train không có trong archive. Các split tiện dùng nằm ở `dataset/train/{images,labels.json}` và `dataset/test/{images,labels.json}`. Split train giữ 3.529 ảnh có sẵn; test có đủ 819 ảnh. Ảnh được hard-link khi cùng ổ đĩa để không nhân đôi dung lượng; dữ liệu lớn nằm trong `.gitignore`.
 
 Đặt video dashcam người dùng tự quay hoặc có giấy phép tại:
 
@@ -31,7 +31,8 @@ SPEC chưa cung cấp tệp video, số video, độ phân giải, tốc độ k
 Kiểm tra nhãn và tạo ảnh xem trước:
 
 ```powershell
-python -m src.dataset tusimple --root data/tusimple/train_set --labels data/tusimple/train_set/label_data.json --preview results/gt_preview
+python -m src.dataset tusimple --root dataset/train/images --labels dataset/train/labels.json --preview results/gt_preview_train
+python -m src.dataset tusimple --root dataset/test/images --labels dataset/test/labels.json --preview results/gt_preview_test
 ```
 
 Demo tương tác:
@@ -50,8 +51,8 @@ python app.py --input data/dashcam/night/<video>.mp4 --method proposed --config 
 Đánh giá TuSimple. Dùng tập train để chọn tham số; chỉ chạy test một lần để báo cáo:
 
 ```powershell
-python eval/tusimple_eval.py --config configs/E.yaml --split train --root data/tusimple/train_set --labels data/tusimple/train_set/label_data.json
-python eval/tusimple_eval.py --config configs/E.yaml --split test --root data/tusimple/test_set --labels data/tusimple/test_label.json
+python eval/tusimple_eval.py --config configs/E.yaml --split train --root dataset/train/images --labels dataset/train/labels.json
+python eval/tusimple_eval.py --config configs/E.yaml --split test --root dataset/test/images --labels dataset/test/labels.json
 ```
 
 Chạy ablation và benchmark:
