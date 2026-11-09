@@ -1,0 +1,12 @@
+﻿seed: 42
+method: proposed
+data: {tusimple: data/tusimple, day: data/dashcam/day, night: data/dashcam/night, rain: data/dashcam/rain}
+pipeline: {enhancement: none, color_threshold: true, roi: true, perspective: true, sliding_windows: true, previous_fit_search: false, kalman: false, warning: true, hough: false}
+preprocess: {canny_low: 50, canny_high: 150, gaussian_kernel: [5, 5], roi_polygon: null, hough: {threshold: null, min_line_length: null, max_line_gap: null}, min_abs_slope: null, yellow_h_range: [15, 35], yellow_s_min: 100, white_l_min: 200, gradient_channel: L, gradient_threshold: null}
+enhancement: {gamma: null, log_scale: null, clahe_clip_limit: null, clahe_tile_grid_size: null}
+homography: {tusimple: {source: null, destination: null}, day: {source: null, destination: null}, night: {source: null, destination: null}, rain: {source: null, destination: null}}
+fit: {window_count: null, window_margin: null, recenter_min_pixels: null, min_fit_points: null, search_margin: null, min_lane_width_norm: null, max_lane_width_norm: null}
+kalman: {dt: null, process_noise: null, measurement_noise: null, initial_covariance: null, gating_threshold: 11.34}
+departure: {lane_width_m: 3.7, on_offset_m: null, off_offset_m: null, tlc_threshold_s: null, consecutive_frames: null, offset_only_threshold_m: null}
+evaluation: {tune_samples: null, seed: 42, fps_runs: null}
+
