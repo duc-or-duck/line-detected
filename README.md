@@ -1,6 +1,6 @@
 # Phát hiện làn đường và cảnh báo chệch làn
 
-Mã nguồn hiện thực phương pháp cơ sở (baseline) Canny + vùng quan tâm (region of interest, ROI) + Hough và pipeline đề xuất dùng ngưỡng màu Hue-Lightness-Saturation (HLS), bird's-eye view (BEV), cửa sổ trượt, đa thức bậc hai, Kalman tự cài đặt và hệ thống cảnh báo chệch làn (lane departure warning system, LDWS). Các khối được bật/tắt bằng YAML; cấu hình A–F dùng chung mã nguồn.
+Mã nguồn hiện thực phương pháp cơ sở (baseline) Canny + vùng quan tâm (region of interest, ROI) + Hough + K-means tự cài đặt để gom các đoạn thẳng thành hai biên làn. Pipeline đề xuất dùng ngưỡng màu Hue-Lightness-Saturation (HLS), bird's-eye view (BEV), cửa sổ trượt, đa thức bậc hai, Kalman tự cài đặt và hệ thống cảnh báo chệch làn (lane departure warning system, LDWS). Các khối được bật/tắt bằng YAML; cấu hình A–F dùng chung mã nguồn.
 
 ## Cài đặt
 
@@ -93,7 +93,7 @@ Các giá trị `null` dưới đây tương ứng với chỗ trống hoặc th
 
 | Khối | Khóa YAML cần điền |
 |---|---|
-| ROI và Hough | `preprocess.roi_polygon`, `preprocess.hough.threshold`, `preprocess.hough.min_line_length`, `preprocess.hough.max_line_gap`, `preprocess.min_abs_slope` |
+| ROI, Hough và K-means | `preprocess.roi_polygon`, `preprocess.hough.threshold`, `preprocess.hough.min_line_length`, `preprocess.hough.max_line_gap`, `preprocess.kmeans.clusters`, `preprocess.min_abs_slope` |
 | Gradient và tăng cường ảnh | `preprocess.gradient_threshold`, `pipeline.enhancement` (chọn `gamma`, `log`, `hist_eq`, `clahe` hoặc `none`), `enhancement.gamma`, `enhancement.log_scale`, `enhancement.clahe_clip_limit`, `enhancement.clahe_tile_grid_size` |
 | Homography | `homography.{tusimple,day,night,rain}.source` và `.destination` (mỗi nguồn bốn điểm) |
 | Cửa sổ và kiểm tra đa thức | `fit.window_count`, `fit.window_margin`, `fit.recenter_min_pixels`, `fit.min_fit_points`, `fit.search_margin`, `fit.min_lane_width_norm`, `fit.max_lane_width_norm` |
@@ -125,7 +125,7 @@ Chưa có dữ liệu TuSimple hoặc dashcam trong kho nên hiện chưa có s�
 | Kỹ thuật | Vai trò | Bài học |
 |---|---|---|
 | Canny + ROI | Baseline phát hiện biên | Bài [ ] |
-| Biến đổi Hough | Baseline khớp đoạn thẳng | Bài [ ] |
+| Biến đổi Hough + K-means | Baseline gom đoạn Hough thủ công thành hai biên làn | Bài [ ] |
 | Ngưỡng màu HLS + CLAHE/gamma | Tách làn và tăng cường ảnh | Bài [ ] |
 | Homography | Bird's-eye view | Bài [ ] |
 | Cửa sổ trượt + đa thức bậc hai | Khớp làn cong | Bài [ ] |

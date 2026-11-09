@@ -36,6 +36,8 @@ preprocess:
     threshold: 30
     min_line_length: 60
     max_line_gap: 80
+  kmeans:
+    clusters: 2
   min_abs_slope: 0.5
   yellow_h_range:
   - 15
