@@ -16,7 +16,7 @@ Seed tái lập là `42` trong YAML và các phép lấy mẫu dùng `numpy.rand
 
 ## Dữ liệu
 
-Không có dữ liệu được tải tự động. Tải TuSimple từ trang benchmark chính thức: [TuSimple lane detection benchmark](https://github.com/TuSimple/tusimple-benchmark). Đặt ảnh và tệp nhãn dưới `data/tusimple/`; truyền chính xác các tệp nhãn bằng `--labels`.
+Không có dữ liệu được tải tự động. Có thể tải bộ dữ liệu TuSimple từ [Kaggle: TuSimple Road](https://www.kaggle.com/datasets/touhidhaider/tusimple-road) hoặc tham khảo [TuSimple lane detection benchmark](https://github.com/TuSimple/tusimple-benchmark). Sau khi tải và giải nén, đặt ảnh và tệp nhãn dưới `data/tusimple/`; các lệnh bên dưới giả định có `train_set/label_data.json` và `test_set/test_label.json`. Cấu trúc archive Kaggle chưa được xác nhận, nên đối chiếu tên tệp sau khi giải nén và truyền đúng đường dẫn bằng `--root` và `--labels`.
 
 Đặt video dashcam người dùng tự quay hoặc có giấy phép tại:
 
