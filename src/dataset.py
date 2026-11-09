@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -88,3 +89,29 @@ def _validate_record(record: Any, path: Path, line_number: int) -> None:
             raise ValueError(f"{where}: each lane must match h_samples length")
         if not all(isinstance(x, int) for x in lane):
             raise ValueError(f"{where}: lane coordinates must be integers")
+
+
+def main() -> None:
+    import sys
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description="Validate TuSimple labels and write previews")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    tusimple = subparsers.add_parser("tusimple")
+    tusimple.add_argument("--root", required=True)
+    tusimple.add_argument("--labels", nargs="+", required=True)
+    tusimple.add_argument("--preview", required=True)
+    tusimple.add_argument("--limit", type=int)
+    args = parser.parse_args()
+    errors = validate_dataset(args.root, args.labels)
+    if errors:
+        for error in errors:
+            print(f"Lỗi xác thực: {error}")
+        raise SystemExit(1)
+    total = sum(create_preview(args.root, label, args.preview, args.limit) for label in args.labels)
+    print(f"Xác thực thành công; đã ghi {total} ảnh xem trước")
+
+
+if __name__ == "__main__":
+    main()
