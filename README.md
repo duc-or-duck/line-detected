@@ -1,10 +1,8 @@
 # Phát hiện làn đường và cảnh báo chệch làn
 
-Mã nguồn hiện thực phương pháp cơ sở (baseline) Canny + vùng quan tâm (region of interest, ROI) + Hough + K-means tự cài đặt để gom các đoạn thẳng thành hai biên làn. Pipeline đề xuất dùng ngưỡng màu Hue-Lightness-Saturation (HLS), bird's-eye view (BEV), cửa sổ trượt, đa thức bậc hai, Kalman tự cài đặt và hệ thống cảnh báo chệch làn (lane departure warning system, LDWS). Các khối được bật/tắt bằng YAML; cấu hình A–F dùng chung mã nguồn.
+Dự án dùng baseline Canny + ROI + Hough để phát hiện biên làn; pipeline cải tiến dùng ngưỡng HLS, Canny, ROI, homography (bird's-eye view), sliding window, khớp đa thức bậc hai và Kalman. Hệ thống ước lượng tâm làn/xe, độ lệch pixel và độ lệch mét khi đã hiệu chuẩn; cảnh báo có trạng thái SAFE, WARNING, DANGER hoặc chưa đủ dữ liệu.
 
 ## Cài đặt
-
-Python 3.9 trở lên:
 
 ```powershell
 python -m venv .venv
@@ -12,123 +10,43 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Seed tái lập là `42` trong YAML và các phép lấy mẫu dùng `numpy.random.default_rng(42)`.
-
 ## Dữ liệu
 
-TuSimple Road đã tải từ [Kaggle](https://www.kaggle.com/datasets/touhidhaider/tusimple-road) vào `dataset/TuSimple-Road/`. Bản nguồn có 3.626 nhãn train và 819 nhãn test; 97 ảnh được tham chiếu trong nhãn train không có trong archive. Các split tiện dùng nằm ở `dataset/train/{images,labels.json}` và `dataset/test/{images,labels.json}`. Split train giữ 3.529 ảnh có sẵn; test có đủ 819 ảnh. Archive chỉ có ảnh khung cuối dạng phẳng, không có chuỗi 20 khung/clip theo yêu cầu đánh giá; do đó TuSimple test được ghi `n/a` kèm lý do. Ảnh được hard-link khi cùng ổ đĩa để không nhân đôi dung lượng; dữ liệu lớn nằm trong `.gitignore`.
+- TuSimple: [benchmark chính thức](https://github.com/TuSimple/tusimple-benchmark/tree/master/doc/lane_detection); bản Kaggle đã dùng: [TuSimple Road](https://www.kaggle.com/datasets/touhidhaider/tusimple-road). Dữ liệu hiện có trong `dataset/train/images/`, `dataset/train/labels.json`, `dataset/test/images/`, `dataset/test/labels.json`.
+- CULane: [trang dữ liệu chính thức](https://xingangpan.github.io/projects/CULane.html). Đặt ảnh và annotation `.txt`/`.lines.txt` theo đường dẫn trong list dưới `data/culane/`; mask tùy chọn ở `data/culane/laneseg_label_w16/`.
+- Dashcam: đặt video tự quay/có quyền sử dụng tại `data/dashcam/day/`, `data/dashcam/night/`, `data/dashcam/rain/`. Clip demo sẵn có ở `test_video/`.
 
-Đặt video dashcam người dùng tự quay hoặc có giấy phép tại:
+Không có dữ liệu nào được tải tự động. TuSimple hiện lưu ảnh khung cuối dạng phẳng, không có chuỗi 20 khung/clip; evaluator sẽ báo `n/a` thay vì chấm nhầm các ảnh như một clip.
 
-- `data/dashcam/day/`
-- `data/dashcam/night/`
-- `data/dashcam/rain/`
+## Chạy demo
 
-SPEC chưa cung cấp tệp video, số video, độ phân giải, tốc độ khung hình, thiết bị, nguồn/giấy phép hoặc số khung gán nhãn mỗi điều kiện. Các giá trị được để `null` trong `dataset_metadata` của YAML. Gán nhãn 20–30 khung cho mỗi điều kiện theo yêu cầu SPEC. Không đưa CULane vào kết quả mặc định vì đây là tập tùy chọn trong SPEC.
-
-## Chạy
-
-Kiểm tra nhãn và tạo ảnh xem trước:
+OpenCV `VideoCapture` nhận MP4 và AVI.
 
 ```powershell
-python -m src.dataset tusimple --root dataset/train/images --labels dataset/train/labels.json --preview results/gt_preview_train
-python -m src.dataset tusimple --root dataset/test/images --labels dataset/test/labels.json --preview results/gt_preview_test
-```
-
-Demo tương tác:
-
-```powershell
-python app.py --input data/dashcam/day/<video>.mp4 --method proposed
-python app.py --input data/dashcam/day/<video>.mp4 --method baseline
-```
-
-Chạy thử clip được cung cấp trong `test_video/`:
-
-```powershell
+python app.py --input "test_video/YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4" --method baseline --data-source day
 python app.py --input "test_video/YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4" --method proposed --config configs/E.yaml --data-source day
-python app.py --input "test_video/YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4" --method baseline --config configs/A.yaml --data-source day
 ```
 
-ROI và fit riêng cho `day` là preset demo cho clip này; chúng không được dùng khi đánh giá nguồn `tusimple`. Hiệu chỉnh này chỉ để kiểm tra hình ảnh demo, không thay cho đánh giá định lượng.
+Nhấn `q` để đóng cửa sổ. Demo vẽ biên làn và tâm làn/xe, hiển thị độ lệch, trạng thái cảnh báo và FPS xử lý trung bình. Homography cần bốn điểm nguồn/đích đúng camera trong YAML; nếu để `null`, xử lý tiếp tục trên ảnh gốc.
 
-Chọn cấu hình hoặc khai báo nguồn hình học homography:
-
-```powershell
-python app.py --input data/dashcam/night/<video>.mp4 --method proposed --config configs/F.yaml --data-source night
-```
-
-Đánh giá TuSimple. Dùng tập train để chọn tham số; chỉ chạy test một lần để báo cáo:
-
-```powershell
-python eval/tusimple_eval.py --config configs/E.yaml --split train --root dataset/train/images --labels dataset/train/labels.json
-python eval/tusimple_eval.py --config configs/E.yaml --split test --root dataset/test/images --labels dataset/test/labels.json
-```
-
-Chạy ablation và benchmark:
-
-```powershell
-python eval/ablation.py --tusimple-root data/tusimple/test_set --test-labels data/tusimple/test_label.json
-python eval/benchmark_fps.py --video data/dashcam/night/<video>.mp4 --config configs/E.yaml --data-source night
-```
-
-Để điền bảng dashcam, cung cấp CSV gán nhãn với các cột `condition,video,frame_index,baseline_correct,proposed_correct`; `condition` là `day`, `night` hoặc `rain`, và hai cột correctness là kết quả kiểm tra thủ công xem cả hai biên có được phát hiện đúng không. Bảng tăng cường ảnh nhận CSV `condition,enhancement,correct` với phép tăng cường `none`, `gamma`, `log`, `hist_eq` hoặc `clahe`. Sau đó chạy:
-
-```powershell
-python eval/ablation.py --dashcam-labels data/dashcam_labels.csv --enhancement-labels data/enhancement_labels.csv --warning-labels data/normal_driving_offsets.csv
-```
-
-CSV cảnh báo dùng các cột `offset_m,offset_velocity_mps,true_departure`; `true_departure` đánh dấu trạng thái chệch làn theo nhãn thủ công. Điền `dataset_metadata.dashcam_fps` để tính cảnh báo sai mỗi phút.
-
-Kiểm thử:
+## Đánh giá
 
 ```powershell
 pytest -q
+python eval/tusimple_eval.py --config configs/E.yaml --split train --root dataset/train/images --labels dataset/train/labels.json
+python eval/tusimple_eval.py --config configs/E.yaml --split test --root dataset/test/images --labels dataset/test/labels.json
+python eval/culane_eval.py --root data/culane --list-file data/culane/list/test.txt --config configs/E.yaml
+python eval/benchmark_fps.py --video "test_video/YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4" --config configs/E.yaml --data-source day
+python eval/ablation.py
 ```
 
-Khi dữ liệu hoặc tham số bắt buộc còn thiếu, script ghi `n/a` kèm lý do; chúng không tạo số đo thay thế. `eval/tusimple_eval.py` hiện thực lại các phép đo Accuracy/FP/FN và pixel error theo thông lệ benchmark TuSimple; cần xác minh lại với `lane.py` chính thức. Kết quả chạy nằm trong `results/` dưới dạng CSV và PNG theo tên Bảng/Hình trong SPEC.
+TuSimple chấm accuracy, FP/FN và sai số pixel; mỗi clip cần đủ 20 khung và chỉ chấm khung cuối. CULane hỗ trợ annotation điểm `.txt`/`.lines.txt` (accuracy, FP/FN, sai số pixel) và mask segmentation (precision/recall/F1, khoảng cách pixel); đây là phép đo của dự án, không thay evaluator chính thức CULane. `evaluation.pixel_threshold_px`, `evaluation.lane_accuracy_threshold` và `evaluation.fps_runs` phải được cấu hình trước; nếu thiếu ngưỡng hoặc dữ liệu, kết quả là `n/a`.
 
-## Tham số cần cung cấp
+Benchmark ghi số khung, FPS trung bình không tính thời gian đọc video, và median thời gian từng khối vào `results/Bảng_4.6_runtime.csv`. Các kết quả khác được ghi ở `results/` dưới dạng CSV/PNG; không có số đo giả.
 
-Các giá trị `null` dưới đây tương ứng với chỗ trống hoặc tham số chưa chốt trong SPEC. Hãy điền giá trị đã hiệu chỉnh vào YAML trước khi dùng khối tương ứng; không dùng kết quả test để hiệu chỉnh.
+## Hiệu chuẩn và giới hạn
 
-| Khối | Khóa YAML cần điền |
-|---|---|
-| ROI, Hough và K-means | `preprocess.roi_polygon`, `preprocess.hough.threshold`, `preprocess.hough.min_line_length`, `preprocess.hough.max_line_gap`, `preprocess.kmeans.clusters`, `preprocess.min_abs_slope` |
-| Gradient và tăng cường ảnh | `preprocess.gradient_threshold`, `pipeline.enhancement` (chọn `gamma`, `log`, `hist_eq`, `clahe` hoặc `none`), `enhancement.gamma`, `enhancement.log_scale`, `enhancement.clahe_clip_limit`, `enhancement.clahe_tile_grid_size` |
-| Homography | `homography.{tusimple,day,night,rain}.source` và `.destination` (mỗi nguồn bốn điểm) |
-| Cửa sổ và kiểm tra đa thức | `fit.window_count`, `fit.window_margin`, `fit.recenter_min_pixels`, `fit.min_fit_points`, `fit.search_margin`, `fit.min_lane_width_norm`, `fit.max_lane_width_norm` |
-| Kalman | `kalman.dt`, `kalman.process_noise`, `kalman.measurement_noise`, `kalman.initial_covariance` |
-| Cảnh báo | `departure.on_offset_m`, `departure.off_offset_m`, `departure.tlc_threshold_s`, `departure.consecutive_frames`, `departure.offset_only_threshold_m` |
-| Đánh giá | `evaluation.tune_samples`, `evaluation.fps_runs`, `evaluation.pixel_threshold_px`, `evaluation.lane_accuracy_threshold` |
-| Thông tin bộ dữ liệu | `dataset_metadata.tusimple_train_samples`, `dataset_metadata.tusimple_test_samples`, các khóa `dataset_metadata.dashcam_*`, `dataset_metadata.culane_sample_count` |
-| Đối chiếu đề cương | Các khóa `course_lessons.*` |
-
-`seed=42`, Canny `50/150`, dải HLS vàng `15–35`, `S>100`, trắng `L>200`, gating `11.34`, và chiều rộng làn mặc định `3.7 m` đã được đưa từ SPEC vào mã/cấu hình. Gating dùng đơn vị Mahalanobis và hệ số đa thức được chuẩn hóa theo kích thước ảnh.
-
-## Kết quả hiện có
-
-Chưa có dữ liệu TuSimple hoặc dashcam trong kho nên hiện chưa có số đo thực nghiệm. Chạy `python eval/ablation.py` để tạo CSV với `n/a` và PNG giải thích dữ liệu còn thiếu. Không có bảng hoặc hình kết quả được điền bằng số giả.
-
-## Phân công công việc
-
-| Thành viên | Phần việc | Commit |
-|---|---|---|
-| Thành viên 1 | Dataset, gán nhãn và hiệu chỉnh tham số trên train | Bổ sung sau |
-| Thành viên 2 | Baseline, tiền xử lý và homography | Bổ sung sau |
-| Thành viên 3 | Fit làn, Kalman và kiểm chứng với OpenCV | Bổ sung sau |
-| Thành viên 4 | Cảnh báo, đánh giá, ablation và demo | Bổ sung sau |
-
-Điều chỉnh phân công theo danh sách thành viên thực tế; kho hiện tại không có dữ liệu thành viên hoặc mã học viên.
-
-## Đối chiếu yêu cầu môn học
-
-| Kỹ thuật | Vai trò | Bài học |
-|---|---|---|
-| Canny + ROI | Baseline phát hiện biên | Bài [ ] |
-| Biến đổi Hough + K-means | Baseline gom đoạn Hough thủ công thành hai biên làn | Bài [ ] |
-| Ngưỡng màu HLS + CLAHE/gamma | Tách làn và tăng cường ảnh | Bài [ ] |
-| Homography | Bird's-eye view | Bài [ ] |
-| Cửa sổ trượt + đa thức bậc hai | Khớp làn cong | Bài [ ] |
-| Kalman tự cài đặt | Theo dõi làn theo thời gian | Bài [ ] |
-
-Kỹ thuật, baseline, cải tiến, tự cài đặt Kalman có kiểm chứng thư viện, đánh giá định lượng, ablation và demo đã có trong mã. Điền số bài học từ đề cương môn vào các ô `Bài [ ]` trước khi nộp.
+- Điền `homography.{tusimple,culane,day,night,rain}.source/destination` theo camera.
+- Điền `departure.lane_width_m` khi biết bề rộng làn; nếu chưa hiệu chuẩn, chỉ dùng độ lệch pixel.
+- Điền ngưỡng warning/danger và tham số Kalman trong YAML trước khi đánh giá cảnh báo. Nếu thiếu biên làn hoặc ngưỡng cần thiết, trạng thái là `UNAVAILABLE`.
+- Bộ dữ liệu CULane và video dashcam phải được tải, giải nén và đặt đúng đường dẫn thủ công.
