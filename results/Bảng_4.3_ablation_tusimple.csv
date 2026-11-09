@@ -1,0 +1,7 @@
+﻿Cấu hình,Accuracy (%),FP,FN,Sai số (px),Ghi chú
+A. Canny + ROI + Hough,n/a,n/a,n/a,n/a,Thiếu tệp nhãn TuSimple
+B. HLS + ROI + Hough,n/a,n/a,n/a,n/a,Thiếu tệp nhãn TuSimple
+C. HLS + BEV + cửa sổ trượt + đa thức,n/a,n/a,n/a,n/a,Thiếu tệp nhãn TuSimple
+D. C + tìm quanh đa thức trước,n/a,n/a,n/a,n/a,Thiếu tệp nhãn TuSimple
+E. D + Kalman,n/a,n/a,n/a,n/a,Thiếu tệp nhãn TuSimple
+F. E + tăng cường ảnh,n/a,n/a,n/a,n/a,Thiếu tệp nhãn TuSimple
