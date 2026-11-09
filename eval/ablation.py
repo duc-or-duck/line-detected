@@ -26,7 +26,6 @@ def main() -> None:
     parser.add_argument("--tusimple-root", default="data/tusimple")
     parser.add_argument("--test-labels", nargs="*", default=[])
     parser.add_argument("--dashcam-labels", help="CSV with condition, video, frame_index, baseline_correct, proposed_correct")
-    parser.add_argument("--enhancement-labels", help="CSV with condition, enhancement, correct")
     parser.add_argument("--warning-labels", help="CSV with offset_m, offset_velocity_mps, true_departure")
     args = parser.parse_args()
     root = Path(args.tusimple_root)
@@ -57,14 +56,12 @@ def main() -> None:
     write_csv("Bảng_4.4_dashcam.csv",
               ["Điều kiện", "Số khung gán nhãn", "Baseline (A) (%)", "Đề xuất (F) (%)", "fps", "Ghi chú"],
               dashcam_rows)
-    enhancement_rows = _enhancement_rows(args.enhancement_labels)
-    write_csv("Bảng_4.5_enhancement.csv",
-              ["Phép tăng cường", "Ban đêm (%)", "Trời mưa (%)", "Ghi chú"], enhancement_rows)
-    timing_rows = [[block, NA, NA, "Chưa chạy benchmark với số lần lặp N đã cấu hình"]
+    timing_rows = [[block, NA, NA, NA, NA, "Chưa chạy benchmark với số lần lặp N đã cấu hình"]
                    for block in ("Tiền xử lý và tách vạch", "Bird's-eye view",
                                  "Cửa sổ trượt và đa thức", "Kalman và gating",
                                  "Độ lệch và cảnh báo", "Tổng")]
-    write_csv("Bảng_4.6_runtime.csv", ["Khối", "Thời gian (ms)", "Tỷ lệ (%)", "Ghi chú"], timing_rows)
+    write_csv("Bảng_4.6_runtime.csv", ["Khối", "Thời gian (ms)", "Tỷ lệ (%)",
+                                      "FPS trung bình", "Số khung", "Ghi chú"], timing_rows)
     write_csv("Hình_4.3_departure_warning.csv",
               ["Logic cảnh báo", "Cảnh báo sai mỗi phút", "Ghi chú"],
               _warning_rows(args.warning_labels))
@@ -126,24 +123,6 @@ def _dashcam_rows(label_path: str | None) -> list[list[object]]:
             notes.append("Thiếu video mở được hoặc số lần lặp N trong YAML")
         result.append([display, len(rows), _rate(baseline), _rate(proposed), _value(fps), "; ".join(notes)])
     return result
-
-
-def _enhancement_rows(label_path: str | None) -> list[list[object]]:
-    labels = (("none", "Không tăng cường"), ("gamma", "Gamma"), ("log", "Log"),
-              ("hist_eq", "Cân bằng histogram"), ("clahe", "CLAHE"))
-    annotations = _read_rows(label_path)
-    output = []
-    for method, display in labels:
-        rates = {}
-        for condition in ("night", "rain"):
-            values = [_truth(row.get("correct")) for row in annotations
-                      if row.get("condition", "").lower() == condition and
-                      row.get("enhancement", "").lower() == method]
-            values = [value for value in values if value is not None]
-            rates[condition] = _rate(values)
-        note = "" if rates["night"] != NA and rates["rain"] != NA else "Thiếu tập khung gán nhãn cho ban đêm hoặc trời mưa"
-        output.append([display, rates["night"], rates["rain"], note])
-    return output
 
 
 def _warning_rows(label_path: str | None, config: dict | None = None) -> list[list[object]]:

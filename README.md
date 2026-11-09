@@ -1,6 +1,6 @@
 # Phát hiện làn đường và cảnh báo chệch làn
 
-Dự án dùng baseline Canny + ROI + Hough để phát hiện biên làn; pipeline cải tiến dùng ngưỡng HLS, Canny, ROI, homography (bird's-eye view), sliding window, khớp đa thức bậc hai và Kalman. Hệ thống ước lượng tâm làn/xe, độ lệch pixel và độ lệch mét khi đã hiệu chuẩn; cảnh báo có trạng thái SAFE, WARNING, DANGER hoặc chưa đủ dữ liệu.
+Dự án dùng baseline Canny + ROI + Hough, với K-means tự cài đặt để gom các đoạn Hough; pipeline cải tiến dùng ngưỡng HLS, Canny, ROI, homography (bird's-eye view), sliding window, khớp đa thức bậc hai và Kalman. Hệ thống ước lượng tâm làn/xe, độ lệch pixel và độ lệch mét khi đã hiệu chuẩn; cảnh báo có trạng thái SAFE, WARNING, DANGER hoặc chưa đủ dữ liệu.
 
 ## Cài đặt
 

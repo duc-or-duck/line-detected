@@ -1,4 +1,4 @@
-from eval.ablation import _dashcam_rows, _enhancement_rows, _warning_rows
+from eval.ablation import _dashcam_rows, _warning_rows
 
 
 def test_dashcam_manual_labels_produce_frame_rates(tmp_path):
@@ -9,15 +9,6 @@ def test_dashcam_manual_labels_produce_frame_rates(tmp_path):
     assert rows[0][1:4] == [1, 100.0, 0.0]
     assert rows[0][4] == "n/a"
     assert rows[1][1:4] == [0, "n/a", "n/a"]
-
-
-def test_enhancement_manual_labels_produce_condition_rates(tmp_path):
-    labels = tmp_path / "enhancement.csv"
-    labels.write_text("condition,enhancement,correct\nnight,gamma,true\nrain,gamma,false\n",
-                      encoding="utf-8")
-    rows = _enhancement_rows(str(labels))
-    gamma = next(row for row in rows if row[0] == "Gamma")
-    assert gamma[1:3] == [100.0, 0.0]
 
 
 def test_warning_annotations_compare_offset_only_with_tlc_hysteresis(tmp_path):
