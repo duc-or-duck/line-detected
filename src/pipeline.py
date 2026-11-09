@@ -14,8 +14,8 @@ from .baseline import detect_baseline
 from .departure import DepartureWarning, calculate_offset
 from .kalman import LaneKalmanFilter
 from .lane_fit import sliding_window_fit
-from .preprocess import enhance, lane_mask, roi_mask
-from .warp import warp_image
+from .preprocess import canny_edges, enhance, lane_mask, roi_mask
+from .warp import unwarp_lane_fit, warp_image
 
 
 def load_config(path: str | Path) -> dict:
@@ -43,12 +43,14 @@ class LanePipeline:
             self.data_source, preprocess_cfg.get("roi_polygon"))
         source_preprocess_cfg = preprocess_cfg | {"roi_polygon": roi_polygon}
         line_ranges = None
+        lane_measurement_available = False
         if method == "baseline":
             start = time.perf_counter()
             found = detect_baseline(frame, source_preprocess_cfg)
             blocks["preprocess_detection"] = (time.perf_counter() - start) * 1000
             left, right, binary = found["left"], found["right"], found["edges"]
             line_ranges = found.get("line_ranges")
+            lane_measurement_available = left is not None and right is not None
             if pipeline.get("kalman", False):
                 left, right = self._filter_fits(left, right)
         elif method == "proposed":
@@ -57,7 +59,9 @@ class LanePipeline:
             start = time.perf_counter()
             enhanced = enhance(frame, pipeline.get("enhancement"), self.config.get("enhancement", {}))
             if pipeline.get("color_threshold", False):
-                binary = lane_mask(enhanced, preprocess_cfg)
+                colors = lane_mask(enhanced, preprocess_cfg)
+                edges = canny_edges(enhanced, preprocess_cfg)
+                binary = cv2.bitwise_or(colors, edges)
             else:
                 gray = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)
                 binary = cv2.Canny(gray, int(preprocess_cfg.get("canny_low", 50)),
@@ -69,14 +73,17 @@ class LanePipeline:
             homography = self.config.get("homography", {}).get(self.data_source or "")
             start = time.perf_counter()
             if pipeline.get("perspective", False) and homography:
-                warped, _ = warp_image(binary, homography.get("source"), homography.get("destination"))
+                warped, matrix = warp_image(binary, homography.get("source"), homography.get("destination"))
             else:
                 warped = binary
+                matrix = None
             blocks["perspective"] = (time.perf_counter() - start) * 1000
 
             start = time.perf_counter()
             previous = self.previous_fits if pipeline.get("previous_fit_search", False) else None
             left, right, _ = sliding_window_fit(warped, fit_cfg, previous)
+            left = unwarp_lane_fit(left, matrix, height, width)
+            right = unwarp_lane_fit(right, matrix, height, width)
             if left is not None and right is not None:
                 lane_width = float(np.polyval(right, 1) - np.polyval(left, 1))
                 minimum, maximum = fit_cfg.get("min_lane_width_norm"), fit_cfg.get("max_lane_width_norm")
@@ -85,6 +92,7 @@ class LanePipeline:
                     self.previous_fits = (left.copy(), right.copy())
                 else:
                     left, right = None, None
+            lane_measurement_available = left is not None and right is not None
             blocks["lane_fit"] = (time.perf_counter() - start) * 1000
 
             start = time.perf_counter()
@@ -97,17 +105,28 @@ class LanePipeline:
         start = time.perf_counter()
         departure_cfg = self.config.get("departure", {})
         lane_width_m = departure_cfg.get("lane_width_m")
-        offset = calculate_offset(left, right, width, float(lane_width_m)) if lane_width_m is not None else {"offset_m": None}
+        offset = calculate_offset(left, right, width,
+                                  float(lane_width_m) if lane_width_m is not None else None)
         velocity = self._offset_velocity(left, right, lane_width_m) if self.filters else None
         if pipeline.get("warning", True):
-            warning = self.warning.update(offset.get("offset_m"), velocity, lane_width_m)
+            warning_offset = offset.get("offset_m") if lane_measurement_available else None
+            warning = self.warning.update(warning_offset, velocity, lane_width_m)
         else:
-            warning = {"warning": False, "tlc_s": None, "available": True}
+            state = "SAFE" if lane_measurement_available else "UNAVAILABLE"
+            warning = {"warning": False, "state": state, "tlc_s": None,
+                       "available": lane_measurement_available}
         blocks["offset_warning"] = (time.perf_counter() - start) * 1000
         output = frame.copy()
-        self._draw(output, left, right, warning.get("warning"), roi_polygon, line_ranges)
+        self._draw(output, left, right, warning.get("warning"), roi_polygon, line_ranges,
+                   offset.get("center_px"), offset.get("vehicle_center_px"),
+                   offset.get("offset_px") if lane_measurement_available else None,
+                   warning.get("state"))
         return {"frame": output, "binary": binary, "left": left, "right": right,
-                "offset_m": offset.get("offset_m"), "warning": warning, "timings_ms": blocks}
+                "offset_m": offset.get("offset_m"), "offset_px": offset.get("offset_px"),
+                "lane_center_px": offset.get("center_px"),
+                "vehicle_center_px": offset.get("vehicle_center_px"),
+                "lane_measurement_available": lane_measurement_available,
+                "warning": warning, "timings_ms": blocks}
 
     def _filter_fits(self, left, right):
         cfg = self.config.get("kalman", {})
@@ -133,7 +152,8 @@ class LanePipeline:
         return None if width <= 0 else -float(center_velocity) * float(lane_width_m) / width
 
     @staticmethod
-    def _draw(frame: np.ndarray, left, right, warning, roi_polygon=None, line_ranges=None) -> None:
+    def _draw(frame: np.ndarray, left, right, warning, roi_polygon=None, line_ranges=None,
+              lane_center_px=None, vehicle_center_px=None, offset_px=None, warning_state=None) -> None:
         height, width = frame.shape[:2]
         original = frame.copy() if roi_polygon else None
         region = None
@@ -166,6 +186,21 @@ class LanePipeline:
                     cv2.polylines(frame, [right_points[run]], False, (0, 255, 0), 3)
         if region is not None:
             frame[region == 0] = original[region == 0]
-        if warning is True:
-            cv2.putText(frame, "CANH BAO CHECH LAN", (24, 48), cv2.FONT_HERSHEY_SIMPLEX,
-                        1.0, (0, 0, 255), 2, cv2.LINE_AA)
+        if warning is None:
+            color = (0, 165, 255)
+        elif warning is True:
+            color = (0, 0, 255) if warning_state == "DANGER" else (0, 165, 255)
+        else:
+            color = (0, 200, 0)
+        label = warning_state or ("WARNING" if warning else "SAFE")
+        if label == "UNAVAILABLE":
+            label = "CHUA DU DU LIEU"
+        cv2.putText(frame, label, (24, 42), cv2.FONT_HERSHEY_SIMPLEX, .8, color, 2, cv2.LINE_AA)
+        if lane_center_px is not None and vehicle_center_px is not None:
+            y = height - 18
+            cv2.line(frame, (int(lane_center_px), y - 12), (int(lane_center_px), y + 8),
+                     (255, 0, 0), 3)
+            cv2.circle(frame, (int(vehicle_center_px), y), 6, (0, 0, 255), -1)
+            if offset_px is not None:
+                cv2.putText(frame, f"Lech: {offset_px:+.1f} px", (24, 76),
+                            cv2.FONT_HERSHEY_SIMPLEX, .65, (255, 255, 255), 2, cv2.LINE_AA)

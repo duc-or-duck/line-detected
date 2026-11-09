@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.warp import unwarp_points, warp_image
+from src.warp import unwarp_lane_fit, unwarp_points, warp_image
 
 
 def test_warp_disabled_when_points_are_unknown():
@@ -17,3 +17,10 @@ def test_rectangular_homography_round_trip():
     assert output.shape == image.shape
     restored = unwarp_points(np.array([[20, 20], [70, 70]], dtype=np.float32), matrix)
     np.testing.assert_allclose(restored, [[20, 20], [70, 70]], atol=1e-4)
+
+
+def test_unwarp_lane_fit_restores_original_normalized_curve():
+    identity = np.eye(3, dtype=np.float32)
+    fit = np.array([.1, -.2, .4])
+    restored = unwarp_lane_fit(fit, identity, 100, 200)
+    np.testing.assert_allclose(restored, fit, atol=1e-5)

@@ -8,7 +8,7 @@ def test_all_ablation_configs_load_and_keep_unknowns_null():
         config = load_config(f"configs/{name}.yaml")
         assert config["seed"] == 42
         assert config["evaluation"]["tune_samples"] is None
-        assert set(config["homography"]) == {"tusimple", "day", "night", "rain"}
+        assert set(config["homography"]) == {"tusimple", "culane", "day", "night", "rain"}
 
 
 def test_baseline_runs_with_unknown_hough_values_without_guessing():
