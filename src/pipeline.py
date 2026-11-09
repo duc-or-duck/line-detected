@@ -39,14 +39,19 @@ class LanePipeline:
         height, width = frame.shape[:2]
         pipeline = self.config.get("pipeline", {})
         preprocess_cfg = self.config.get("preprocess", {})
+        roi_polygon = preprocess_cfg.get("roi_polygon_by_source", {}).get(
+            self.data_source, preprocess_cfg.get("roi_polygon"))
+        source_preprocess_cfg = preprocess_cfg | {"roi_polygon": roi_polygon}
         if method == "baseline":
             start = time.perf_counter()
-            found = detect_baseline(frame, preprocess_cfg)
+            found = detect_baseline(frame, source_preprocess_cfg)
             blocks["preprocess_detection"] = (time.perf_counter() - start) * 1000
             left, right, binary = found["left"], found["right"], found["edges"]
             if pipeline.get("kalman", False):
                 left, right = self._filter_fits(left, right)
         elif method == "proposed":
+            fit_cfg = self.config.get("fit_by_source", {}).get(
+                self.data_source, self.config.get("fit", {}))
             start = time.perf_counter()
             enhanced = enhance(frame, pipeline.get("enhancement"), self.config.get("enhancement", {}))
             if pipeline.get("color_threshold", False):
@@ -56,7 +61,7 @@ class LanePipeline:
                 binary = cv2.Canny(gray, int(preprocess_cfg.get("canny_low", 50)),
                                    int(preprocess_cfg.get("canny_high", 150)))
             if pipeline.get("roi", False):
-                binary = roi_mask(binary, preprocess_cfg.get("roi_polygon"))
+                binary = roi_mask(binary, roi_polygon)
             blocks["preprocess_detection"] = (time.perf_counter() - start) * 1000
 
             homography = self.config.get("homography", {}).get(self.data_source or "")
@@ -69,9 +74,8 @@ class LanePipeline:
 
             start = time.perf_counter()
             previous = self.previous_fits if pipeline.get("previous_fit_search", False) else None
-            left, right, _ = sliding_window_fit(warped, self.config.get("fit", {}), previous)
+            left, right, _ = sliding_window_fit(warped, fit_cfg, previous)
             if left is not None and right is not None:
-                fit_cfg = self.config.get("fit", {})
                 lane_width = float(np.polyval(right, 1) - np.polyval(left, 1))
                 minimum, maximum = fit_cfg.get("min_lane_width_norm"), fit_cfg.get("max_lane_width_norm")
                 if ((minimum is None or lane_width >= float(minimum)) and
@@ -99,7 +103,7 @@ class LanePipeline:
             warning = {"warning": False, "tlc_s": None, "available": True}
         blocks["offset_warning"] = (time.perf_counter() - start) * 1000
         output = frame.copy()
-        self._draw(output, left, right, warning.get("warning"))
+        self._draw(output, left, right, warning.get("warning"), roi_polygon)
         return {"frame": output, "binary": binary, "left": left, "right": right,
                 "offset_m": offset.get("offset_m"), "warning": warning, "timings_ms": blocks}
 
@@ -127,15 +131,34 @@ class LanePipeline:
         return None if width <= 0 else -float(center_velocity) * float(lane_width_m) / width
 
     @staticmethod
-    def _draw(frame: np.ndarray, left, right, warning) -> None:
+    def _draw(frame: np.ndarray, left, right, warning, roi_polygon=None) -> None:
         height, width = frame.shape[:2]
+        original = frame.copy() if roi_polygon else None
+        region = None
+        if roi_polygon:
+            region = np.zeros((height, width), dtype=np.uint8)
+            cv2.fillPoly(region, [np.asarray(roi_polygon, dtype=np.int32)], 255)
         if left is not None and right is not None:
             y = np.linspace(0, 1, height)
             ys = np.arange(height)
-            left_points = np.stack([(np.polyval(left, y) * (width - 1)).astype(int), ys], axis=1)
-            right_points = np.stack([(np.polyval(right, y) * (width - 1)).astype(int), ys], axis=1)
-            cv2.polylines(frame, [left_points], False, (0, 255, 0), 3)
-            cv2.polylines(frame, [right_points], False, (0, 255, 0), 3)
+            left_x = np.rint(np.polyval(left, y) * (width - 1)).astype(int)
+            right_x = np.rint(np.polyval(right, y) * (width - 1)).astype(int)
+            valid = (left_x >= 0) & (right_x < width) & (left_x < right_x)
+            if region is not None:
+                in_bounds = (left_x < width) & (right_x >= 0)
+                valid &= in_bounds
+                valid_indices = np.flatnonzero(valid)
+                valid[valid_indices] &= ((region[ys[valid_indices], left_x[valid_indices]] > 0) &
+                                         (region[ys[valid_indices], right_x[valid_indices]] > 0))
+            left_points = np.stack([left_x, ys], axis=1)
+            right_points = np.stack([right_x, ys], axis=1)
+            indices = np.flatnonzero(valid)
+            for run in np.split(indices, np.flatnonzero(np.diff(indices) > 1) + 1):
+                if len(run) >= 2:
+                    cv2.polylines(frame, [left_points[run]], False, (0, 255, 0), 3)
+                    cv2.polylines(frame, [right_points[run]], False, (0, 255, 0), 3)
+        if region is not None:
+            frame[region == 0] = original[region == 0]
         if warning is True:
             cv2.putText(frame, "CANH BAO CHECH LAN", (24, 48), cv2.FONT_HERSHEY_SIMPLEX,
                         1.0, (0, 0, 255), 2, cv2.LINE_AA)

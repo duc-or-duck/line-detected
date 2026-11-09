@@ -28,9 +28,15 @@ def main() -> None:
         if not ok:
             break
         result = pipeline.process(frame, args.method)
+        detected = (result["left"] is not None and result["right"] is not None and
+                    result["offset_m"] is not None)
+        status = "DA PHAT HIEN 2 LAN" if detected else "CHUA NHAN DIEN DU 2 LAN"
+        color = (0, 220, 0) if detected else (0, 165, 255)
+        cv2.putText(result["frame"], status, (24, 42), cv2.FONT_HERSHEY_SIMPLEX,
+                    .7, color, 2, cv2.LINE_AA)
         offset = result["offset_m"]
         if offset is not None:
-            cv2.putText(result["frame"], f"DO LECH: {offset:.3f} m", (24, 82),
+            cv2.putText(result["frame"], f"DO LECH: {offset:.3f} m", (24, 76),
                         cv2.FONT_HERSHEY_SIMPLEX, .7, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.imshow("Phat hien lan duong", result["frame"])
         if cv2.waitKey(1) & 0xFF == ord("q"):
