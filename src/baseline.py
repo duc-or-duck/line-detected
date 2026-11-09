@@ -28,32 +28,16 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
         slope = (y2 - y1) / (x2 - x1)
         if min_abs_slope is not None and abs(slope) < float(min_abs_slope):
             continue
-        # Keep the actual segment samples. Averaging slope/intercept values
-        # collapses curved lane markings into a straight line and is very
-        # sensitive to unrelated Hough segments on bends.
-        length = float(np.hypot(x2 - x1, y2 - y1))
-        groups["left" if slope < 0 else "right"].append(
-            ((x1, y1), (x2, y2), length))
+        intercept = y1 - slope * x1
+        groups["left" if slope < 0 else "right"].append((slope, intercept))
     fits = {}
-    for side, line_segments in groups.items():
-        if not line_segments:
+    for side, lines in groups.items():
+        if not lines:
             fits[side] = None
             continue
-        points = np.asarray([point for first, second, _ in line_segments
-                             for point in (first, second)], dtype=np.float64)
-        x_norm = points[:, 0] / max(width - 1, 1)
-        y_norm = points[:, 1] / max(height - 1, 1)
-        # Hough segments are local straight approximations. Fit their samples
-        # together as x(y) so the output can follow a curved road.
-        weights = np.repeat(np.sqrt([length for _, _, length in line_segments]), 2)
-        if len(np.unique(y_norm)) < 3:
-            fits[side] = None
-            continue
-        try:
-            fit = np.polyfit(y_norm, x_norm, 2, w=weights)
-        except np.linalg.LinAlgError:
-            fit = None
-        fits[side] = (fit if fit is not None and np.isfinite(fit).all()
-                      else None)
+        slope, intercept = np.mean(lines, axis=0)
+        # x_norm = B * y_norm + C
+        fits[side] = np.array([0.0, (1.0 / slope) * height / width,
+                               (-intercept / slope) / width], dtype=np.float64)
     return {**fits, "edges": edges,
             "segments": [] if segments is None else segments[:, 0, :].tolist()}
