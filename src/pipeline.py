@@ -42,11 +42,13 @@ class LanePipeline:
         roi_polygon = preprocess_cfg.get("roi_polygon_by_source", {}).get(
             self.data_source, preprocess_cfg.get("roi_polygon"))
         source_preprocess_cfg = preprocess_cfg | {"roi_polygon": roi_polygon}
+        line_ranges = None
         if method == "baseline":
             start = time.perf_counter()
             found = detect_baseline(frame, source_preprocess_cfg)
             blocks["preprocess_detection"] = (time.perf_counter() - start) * 1000
             left, right, binary = found["left"], found["right"], found["edges"]
+            line_ranges = found.get("line_ranges")
             if pipeline.get("kalman", False):
                 left, right = self._filter_fits(left, right)
         elif method == "proposed":
@@ -103,7 +105,7 @@ class LanePipeline:
             warning = {"warning": False, "tlc_s": None, "available": True}
         blocks["offset_warning"] = (time.perf_counter() - start) * 1000
         output = frame.copy()
-        self._draw(output, left, right, warning.get("warning"), roi_polygon)
+        self._draw(output, left, right, warning.get("warning"), roi_polygon, line_ranges)
         return {"frame": output, "binary": binary, "left": left, "right": right,
                 "offset_m": offset.get("offset_m"), "warning": warning, "timings_ms": blocks}
 
@@ -131,7 +133,7 @@ class LanePipeline:
         return None if width <= 0 else -float(center_velocity) * float(lane_width_m) / width
 
     @staticmethod
-    def _draw(frame: np.ndarray, left, right, warning, roi_polygon=None) -> None:
+    def _draw(frame: np.ndarray, left, right, warning, roi_polygon=None, line_ranges=None) -> None:
         height, width = frame.shape[:2]
         original = frame.copy() if roi_polygon else None
         region = None
@@ -144,6 +146,11 @@ class LanePipeline:
             left_x = np.rint(np.polyval(left, y) * (width - 1)).astype(int)
             right_x = np.rint(np.polyval(right, y) * (width - 1)).astype(int)
             valid = (left_x >= 0) & (right_x < width) & (left_x < right_x)
+            if line_ranges:
+                for side in ("left", "right"):
+                    bounds = line_ranges.get(side)
+                    if bounds is not None:
+                        valid &= (y >= bounds[0]) & (y <= bounds[1])
             if region is not None:
                 in_bounds = (left_x < width) & (right_x >= 0)
                 valid &= in_bounds
