@@ -37,6 +37,23 @@ def test_warning_requires_consecutive_frames_and_hysteresis():
     assert warning.state == "SAFE"
 
 
+def test_missing_measurement_resets_consecutive_warning_counter():
+    warning = DepartureWarning({"on_offset_m": .5, "off_offset_m": .3,
+                                "tlc_threshold_s": .8, "consecutive_frames": 2})
+    assert warning.update(.55, 0, 3.7)["warning"] is False
+    assert warning.update(None, None, 3.7)["state"] == "UNAVAILABLE"
+    assert warning.update(.55, 0, 3.7)["warning"] is False
+
+
+def test_warning_stays_active_while_tlc_is_still_dangerous():
+    warning = DepartureWarning({"on_offset_m": .3, "off_offset_m": .2,
+                                "tlc_threshold_s": .8, "consecutive_frames": 1})
+    assert warning.update(.4, 0, 3.7)["warning"] is True
+    result = warning.update(.1, 4.0, 3.7)
+    assert result["warning"] is True
+    assert result["tlc_s"] < .8
+
+
 def test_warning_reports_safe_warning_danger_and_unavailable_states():
     warning = DepartureWarning({"on_offset_m": .3, "off_offset_m": .2,
                                 "tlc_threshold_s": 1.0, "consecutive_frames": 1,

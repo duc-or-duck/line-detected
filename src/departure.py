@@ -41,6 +41,7 @@ class DepartureWarning:
         required = ("on_offset_m", "off_offset_m", "tlc_threshold_s", "consecutive_frames")
         if (offset_m is None or lane_width_m is None or
                 any(cfg.get(key) is None for key in required)):
+            self.candidate_count = 0
             return {"warning": None, "state": "UNAVAILABLE", "tlc_s": None, "available": False}
         tlc = None
         if offset_velocity_mps is not None and abs(offset_velocity_mps) > 0:
@@ -54,7 +55,8 @@ class DepartureWarning:
         condition = (abs(offset_m) >= float(cfg["on_offset_m"]) or danger_condition or
                      (tlc is not None and tlc <= float(cfg["tlc_threshold_s"])))
         if self.active:
-            if abs(offset_m) <= float(cfg["off_offset_m"]):
+            tlc_safe = tlc is None or tlc > float(cfg["tlc_threshold_s"])
+            if abs(offset_m) <= float(cfg["off_offset_m"]) and tlc_safe:
                 self.active = False
                 self.candidate_count = 0
                 self.state = "SAFE"
