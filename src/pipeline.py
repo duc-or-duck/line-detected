@@ -193,13 +193,10 @@ class LanePipeline:
             color = (0, 200, 0)
         label = warning_state or ("WARNING" if warning else "SAFE")
         if label == "UNAVAILABLE":
-            label = "CHUA DU DU LIEU"
+            label = "CHUA THAY DU 2 VACH" if offset_px is None else "CHUA CAU HINH CANH BAO"
         cv2.putText(frame, label, (24, 42), cv2.FONT_HERSHEY_SIMPLEX, .8, color, 2, cv2.LINE_AA)
         if lane_center_px is not None and vehicle_center_px is not None:
             y = height - 18
             cv2.line(frame, (int(lane_center_px), y - 12), (int(lane_center_px), y + 8),
                      (255, 0, 0), 3)
             cv2.circle(frame, (int(vehicle_center_px), y), 6, (0, 0, 255), -1)
-            if offset_px is not None:
-                cv2.putText(frame, f"Lech: {offset_px:+.1f} px", (24, 76),
-                            cv2.FONT_HERSHEY_SIMPLEX, .65, (255, 255, 255), 2, cv2.LINE_AA)
