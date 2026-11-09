@@ -82,13 +82,14 @@ def evaluate(config: dict, root: Path, labels: list[Path], split: str) -> dict:
     lane_threshold = evaluation.get("lane_accuracy_threshold")
     if not labels:
         return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None, "errors_by_sample": [],
-                "reason": "Thiếu tệp nhãn TuSimple"}
+                "frames": 0, "reason": "Thiếu tệp nhãn TuSimple"}
     annotations = read_annotations(labels)
-    if split == "test" and annotations and any(
+    if annotations and any(
             (root / record["raw_file"]).parent.resolve() == root.resolve()
             for record in annotations):
         return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None,
                 "errors_by_sample": [],
+                "frames": 0,
                 "reason": "Nguồn chỉ chứa ảnh khung cuối dạng phẳng, thiếu chuỗi 20 khung cho mỗi clip"}
     if threshold is None or lane_threshold is None:
         return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None, "errors_by_sample": [],
@@ -101,6 +102,7 @@ def evaluate(config: dict, root: Path, labels: list[Path], split: str) -> dict:
         sample_size = min(int(evaluation["tune_samples"]), len(annotations))
         annotations = [annotations[i] for i in sorted(rng.choice(len(annotations), sample_size, replace=False))]
     scores = []
+    evaluated_frames = 0
     for record in annotations:
         pipeline = LanePipeline(config, "tusimple")
         image_path = root / record["raw_file"]
@@ -108,14 +110,17 @@ def evaluate(config: dict, root: Path, labels: list[Path], split: str) -> dict:
         clip = candidates[-20:]
         if len(clip) != 20:
             return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None, "errors_by_sample": [],
+                    "frames": evaluated_frames,
                     "reason": f"Clip không có đủ 20 khung: {image_path.parent}"}
         prediction = None
         for frame_path in clip:
             frame = cv2.imread(str(frame_path))
             if frame is None:
                 return {"accuracy": None, "fp": None, "fn": None, "pixel_error": None, "errors_by_sample": [],
+                        "frames": evaluated_frames,
                         "reason": f"Không đọc được ảnh: {frame_path}"}
             prediction = predict_frame(pipeline, frame)
+            evaluated_frames += 1
         score = score_lanes(prediction, record["lanes"], threshold, lane_threshold)
         scores.append(score)
     keys = ("accuracy", "fp", "fn", "pixel_error")
@@ -123,7 +128,7 @@ def evaluate(config: dict, root: Path, labels: list[Path], split: str) -> dict:
                 for key in keys}
     averaged["errors_by_sample"] = [float(np.mean(values)) if values else None
                                     for values in zip(*(row["errors_by_sample"] for row in scores))]
-    return averaged | {"reason": ""}
+    return averaged | {"frames": evaluated_frames, "scored_clips": len(scores), "reason": ""}
 
 
 def main() -> None:
@@ -139,9 +144,13 @@ def main() -> None:
     labels = [Path(path) for path in (args.labels or []) if Path(path).is_file()]
     result = evaluate(config, Path(args.root), labels, args.split)
     table = [[args.split, *(result[key] if result.get(key) is not None else NA
-                            for key in ("accuracy", "fp", "fn", "pixel_error")), result["reason"]]]
+                            for key in ("accuracy", "fp", "fn", "pixel_error")),
+              result.get("frames", 0), result.get("scored_clips", 0), result["reason"]]]
+    if result.get("accuracy") is not None:
+        table[0][1] *= 100
     write_csv("Bảng_4.3_tusimple.csv",
-              ["Tập", "Accuracy (%)", "FP", "FN", "Sai số vị trí (px)", "Ghi chú"], table)
+              ["Tập", "Accuracy (%)", "FP", "FN", "Sai số vị trí (px)",
+               "Số khung đã xử lý", "Số clip đã chấm", "Ghi chú"], table)
     errors = result.get("errors_by_sample", [])
     error_rows = [[height, errors[index] if index < len(errors) and errors[index] is not None else NA]
                   for index, height in enumerate(H_SAMPLES)]

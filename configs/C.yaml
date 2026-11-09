@@ -2,6 +2,7 @@ seed: 42
 method: proposed
 data:
   tusimple: data/tusimple
+  culane: data/culane
   day: data/dashcam/day
   night: data/dashcam/night
   rain: data/dashcam/rain
@@ -23,6 +24,7 @@ preprocess:
   - 5
   roi_polygon: null
   roi_polygon_by_source:
+    culane: null
     day:
     - [580, 450]
     - [750, 450]
@@ -46,6 +48,9 @@ enhancement:
   clahe_clip_limit: null
   clahe_tile_grid_size: null
 homography:
+  culane:
+    source: null
+    destination: null
   tusimple:
     source: null
     destination: null
@@ -81,6 +86,7 @@ departure:
   lane_width_m: 3.7
   on_offset_m: null
   off_offset_m: null
+  danger_offset_m: null
   tlc_threshold_s: null
   consecutive_frames: null
   offset_only_threshold_m: null

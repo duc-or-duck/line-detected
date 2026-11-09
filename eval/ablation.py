@@ -39,16 +39,17 @@ def main() -> None:
         score = evaluate(config, root, labels, "test")
         reason = score.get("reason", "") or "Không có kết quả"
         reasons.append(reason)
-        rows.append([f"{name}. " + _label(name), _value(score.get("accuracy")),
+        accuracy = score.get("accuracy")
+        rows.append([f"{name}. " + _label(name), _value(100 * accuracy if accuracy is not None else None),
                      _value(score.get("fp")), _value(score.get("fn")),
-                     _value(score.get("pixel_error")), reason])
+                     _value(score.get("pixel_error")), score.get("frames", 0), reason])
         per_height = score.get("errors_by_sample", [])
         from src.dataset import H_SAMPLES
         pixel_rows.extend([[name, height,
                             per_height[index] if index < len(per_height) and per_height[index] is not None else NA]
                            for index, height in enumerate(H_SAMPLES)])
     write_csv("Bảng_4.3_ablation_tusimple.csv",
-              ["Cấu hình", "Accuracy (%)", "FP", "FN", "Sai số (px)", "Ghi chú"], rows)
+              ["Cấu hình", "Accuracy (%)", "FP", "FN", "Sai số (px)", "Số khung", "Ghi chú"], rows)
     write_csv("Bảng_4.3_pixel_error_h_samples.csv",
               ["Cấu hình", "h_samples (px)", "Sai số trung bình (px)"], pixel_rows)
 
@@ -115,8 +116,8 @@ def _dashcam_rows(label_path: str | None) -> list[list[object]]:
         for video in unique_videos:
             timing = benchmark(Path(video), config, condition)
             total_row = next((item for item in timing if item[0] == "Tổng"), None)
-            if total_row and isinstance(total_row[1], (int, float)) and total_row[1] > 0:
-                fps_values.append(1000.0 / total_row[1])
+            if total_row and isinstance(total_row[3], (int, float)) and total_row[3] > 0:
+                fps_values.append(float(total_row[3]))
         fps = sum(fps_values) / len(fps_values) if fps_values else None
         notes = []
         if not baseline or not proposed:
