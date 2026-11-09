@@ -21,12 +21,22 @@ preprocess:
   gaussian_kernel:
   - 5
   - 5
-  roi_polygon: null
+  roi_polygon:
+  - [463, 300]
+  - [849, 300]
+  - [1157, 700]
+  - [180, 700]
+  roi_polygon_by_source:
+    day:
+    - [500, 400]
+    - [780, 400]
+    - [1200, 719]
+    - [80, 719]
   hough:
-    threshold: null
-    min_line_length: null
-    max_line_gap: null
-  min_abs_slope: null
+    threshold: 30
+    min_line_length: 60
+    max_line_gap: 80
+  min_abs_slope: 0.5
   yellow_h_range:
   - 15
   - 35

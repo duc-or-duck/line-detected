@@ -22,6 +22,12 @@ preprocess:
   - 5
   - 5
   roi_polygon: null
+  roi_polygon_by_source:
+    day:
+    - [580, 450]
+    - [750, 450]
+    - [1200, 719]
+    - [300, 719]
   hough:
     threshold: null
     min_line_length: null
@@ -53,13 +59,18 @@ homography:
     source: null
     destination: null
 fit:
-  window_count: null
-  window_margin: null
-  recenter_min_pixels: null
+  window_count: 12
+  window_margin: 200
+  recenter_min_pixels: 2
   min_fit_points: null
   search_margin: null
   min_lane_width_norm: null
   max_lane_width_norm: null
+fit_by_source:
+  day:
+    window_count: 12
+    window_margin: 60
+    recenter_min_pixels: 2
 kalman:
   dt: null
   process_noise: null
