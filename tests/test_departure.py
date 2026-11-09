@@ -1,6 +1,7 @@
 import numpy as np
 
-from src.departure import DepartureWarning, calculate_offset, offset_only_warning
+from src.departure import (DepartureWarning, calculate_offset, false_alarms_per_minute,
+                           offset_only_warning)
 
 
 def test_offset_from_normalized_boundaries():
@@ -25,3 +26,8 @@ def test_warning_requires_consecutive_frames_and_hysteresis():
     assert warning.update(.4, 0, 3.7)["warning"] is True
     assert warning.update(.2, 0, 3.7)["warning"] is False
     assert offset_only_warning(.55, .5) is True
+
+
+def test_false_alarm_metric_counts_warning_onsets_per_minute():
+    assert np.isclose(false_alarms_per_minute([False, True, True, False, True],
+                                              [False, False, False, True, False], 60), 1440)

@@ -59,3 +59,18 @@ def offset_only_warning(offset_m: float | None, threshold_m: float | None) -> bo
     if offset_m is None or threshold_m is None:
         return None
     return abs(offset_m) >= threshold_m
+
+
+def false_alarms_per_minute(warnings: list[bool], true_departures: list[bool], fps: float) -> float:
+    """Count false warning onsets per observed minute."""
+    if len(warnings) != len(true_departures):
+        raise ValueError("warnings and true_departures must have equal length")
+    if fps <= 0:
+        raise ValueError("fps must be positive")
+    duration_minutes = len(warnings) / float(fps) / 60.0
+    if duration_minutes == 0:
+        return 0.0
+    false_onsets = sum(bool(active) and (index == 0 or not warnings[index - 1])
+                       and not true_departures[index]
+                       for index, active in enumerate(warnings))
+    return false_onsets / duration_minutes
