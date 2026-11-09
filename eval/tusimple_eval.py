@@ -64,7 +64,7 @@ def score_lanes(predicted: list[list[int]], ground_truth: list[list[int]],
 
 
 def predict_frame(pipeline: LanePipeline, frame: np.ndarray) -> list[list[int]]:
-    result = pipeline.process(frame, "proposed")
+    result = pipeline.process(frame, pipeline.config.get("method", "proposed"))
     height, width = frame.shape[:2]
     lanes = []
     for fit in (result["left"], result["right"]):

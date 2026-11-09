@@ -58,7 +58,7 @@ Chạy ablation và benchmark:
 
 ```powershell
 python eval/ablation.py --tusimple-root data/tusimple/test_set --test-labels data/tusimple/test_label.json
-python eval/benchmark_fps.py --video data/dashcam/night/<video>.mp4 --config configs/E.yaml
+python eval/benchmark_fps.py --video data/dashcam/night/<video>.mp4 --config configs/E.yaml --data-source night
 ```
 
 Kiểm thử:
