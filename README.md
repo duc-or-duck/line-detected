@@ -61,6 +61,14 @@ python eval/ablation.py --tusimple-root data/tusimple/test_set --test-labels dat
 python eval/benchmark_fps.py --video data/dashcam/night/<video>.mp4 --config configs/E.yaml --data-source night
 ```
 
+Để điền bảng dashcam, cung cấp CSV gán nhãn với các cột `condition,video,frame_index,baseline_correct,proposed_correct`; `condition` là `day`, `night` hoặc `rain`, và hai cột correctness là kết quả kiểm tra thủ công xem cả hai biên có được phát hiện đúng không. Bảng tăng cường ảnh nhận CSV `condition,enhancement,correct` với phép tăng cường `none`, `gamma`, `log`, `hist_eq` hoặc `clahe`. Sau đó chạy:
+
+```powershell
+python eval/ablation.py --dashcam-labels data/dashcam_labels.csv --enhancement-labels data/enhancement_labels.csv --warning-labels data/normal_driving_offsets.csv
+```
+
+CSV cảnh báo dùng các cột `offset_m,offset_velocity_mps,true_departure`; `true_departure` đánh dấu trạng thái chệch làn theo nhãn thủ công. Điền `dataset_metadata.dashcam_fps` để tính cảnh báo sai mỗi phút.
+
 Kiểm thử:
 
 ```powershell

@@ -1,6 +1,6 @@
 ﻿Phép tăng cường,Ban đêm (%),Trời mưa (%),Ghi chú
-Không tăng cường,n/a,n/a,Thiếu tập khung gán nhãn / cấu hình phép tăng cường
-Gamma,n/a,n/a,Thiếu tập khung gán nhãn / cấu hình phép tăng cường
-Log,n/a,n/a,Thiếu tập khung gán nhãn / cấu hình phép tăng cường
-Cân bằng histogram,n/a,n/a,Thiếu tập khung gán nhãn / cấu hình phép tăng cường
-CLAHE,n/a,n/a,Thiếu tập khung gán nhãn / cấu hình phép tăng cường
+Không tăng cường,n/a,n/a,Thiếu tập khung gán nhãn cho ban đêm hoặc trời mưa
+Gamma,n/a,n/a,Thiếu tập khung gán nhãn cho ban đêm hoặc trời mưa
+Log,n/a,n/a,Thiếu tập khung gán nhãn cho ban đêm hoặc trời mưa
+Cân bằng histogram,n/a,n/a,Thiếu tập khung gán nhãn cho ban đêm hoặc trời mưa
+CLAHE,n/a,n/a,Thiếu tập khung gán nhãn cho ban đêm hoặc trời mưa
