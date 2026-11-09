@@ -6,17 +6,24 @@ import numpy as np
 
 
 def calculate_offset(left: np.ndarray | None, right: np.ndarray | None,
-                     frame_width: int, lane_width_m: float) -> dict:
+                     frame_width: int, lane_width_m: float | None) -> dict:
     if left is None or right is None:
-        return {"offset_m": None, "lane_width_norm": None, "center_norm": None}
+        return {"offset_m": None, "offset_px": None, "lane_width_norm": None,
+                "center_norm": None, "center_px": None, "vehicle_center_px": None}
     y = 1.0
     left_x, right_x = float(np.polyval(left, y)), float(np.polyval(right, y))
     width = right_x - left_x
     if not np.isfinite(width) or width <= 0:
-        return {"offset_m": None, "lane_width_norm": None, "center_norm": None}
+        return {"offset_m": None, "offset_px": None, "lane_width_norm": None,
+                "center_norm": None, "center_px": None, "vehicle_center_px": None}
     center = (left_x + right_x) / 2.0
-    return {"offset_m": (0.5 - center) * lane_width_m / width,
-            "lane_width_norm": width, "center_norm": center}
+    pixel_scale = max(frame_width - 1, 1)
+    offset_px = (0.5 - center) * pixel_scale
+    offset_m = (offset_px * lane_width_m / (width * pixel_scale)
+                if lane_width_m is not None else None)
+    return {"offset_m": offset_m,
+            "offset_px": offset_px, "lane_width_norm": width, "center_norm": center,
+            "center_px": center * pixel_scale, "vehicle_center_px": (frame_width - 1) / 2.0}
 
 
 class DepartureWarning:
@@ -26,6 +33,7 @@ class DepartureWarning:
         self.config = config
         self.active = False
         self.candidate_count = 0
+        self.state = "SAFE"
 
     def update(self, offset_m: float | None, offset_velocity_mps: float | None,
                lane_width_m: float | None) -> dict:
@@ -33,26 +41,36 @@ class DepartureWarning:
         required = ("on_offset_m", "off_offset_m", "tlc_threshold_s", "consecutive_frames")
         if (offset_m is None or lane_width_m is None or
                 any(cfg.get(key) is None for key in required)):
-            return {"warning": None, "tlc_s": None, "available": False}
+            return {"warning": None, "state": "UNAVAILABLE", "tlc_s": None, "available": False}
         tlc = None
         if offset_velocity_mps is not None and abs(offset_velocity_mps) > 0:
             toward = np.sign(offset_velocity_mps) == np.sign(offset_m)
             if toward:
                 remaining = max(float(lane_width_m) / 2.0 - abs(offset_m), 0.0)
                 tlc = remaining / abs(offset_velocity_mps)
-        condition = (abs(offset_m) >= float(cfg["on_offset_m"]) or
+        danger_threshold = cfg.get("danger_offset_m")
+        danger_condition = (danger_threshold is not None and
+                            abs(offset_m) >= float(danger_threshold))
+        condition = (abs(offset_m) >= float(cfg["on_offset_m"]) or danger_condition or
                      (tlc is not None and tlc <= float(cfg["tlc_threshold_s"])))
         if self.active:
             if abs(offset_m) <= float(cfg["off_offset_m"]):
                 self.active = False
                 self.candidate_count = 0
+                self.state = "SAFE"
+            elif danger_condition:
+                self.state = "DANGER"
+            else:
+                self.state = "WARNING"
         elif condition:
             self.candidate_count += 1
             if self.candidate_count >= int(cfg["consecutive_frames"]):
                 self.active = True
+                self.state = "DANGER" if danger_condition else "WARNING"
         else:
             self.candidate_count = 0
-        return {"warning": self.active, "tlc_s": tlc, "available": True}
+            self.state = "SAFE"
+        return {"warning": self.active, "state": self.state, "tlc_s": tlc, "available": True}
 
 
 def offset_only_warning(offset_m: float | None, threshold_m: float | None) -> bool | None:
