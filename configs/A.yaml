@@ -38,7 +38,9 @@ preprocess:
     max_line_gap: 80
   kmeans:
     clusters: 2
+    reference_y_fraction: 0.85
   min_abs_slope: 0.5
+  max_abs_slope: 4.0
   yellow_h_range:
   - 15
   - 35

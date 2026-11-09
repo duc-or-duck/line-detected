@@ -14,15 +14,17 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
     params = config.get("hough", {})
     required = ("threshold", "min_line_length", "max_line_gap")
     if any(params.get(key) is None for key in required):
-        return {"left": None, "right": None, "edges": edges, "segments": []}
+        return {"left": None, "right": None, "edges": edges, "segments": [],
+                "line_ranges": {"left": None, "right": None}}
     segments = cv2.HoughLinesP(edges, 1, np.pi / 180,
                                int(params["threshold"]),
                                minLineLength=int(params["min_line_length"]),
                                maxLineGap=int(params["max_line_gap"]))
     height, width = image.shape[:2]
-    line_features = []
-    line_parameters = []
+    candidates = {"left": [], "right": []}
+    reference_y = float(config.get("kmeans", {}).get("reference_y_fraction", 0.85)) * (height - 1)
     min_abs_slope = config.get("min_abs_slope")
+    max_abs_slope = config.get("max_abs_slope")
     for x1, y1, x2, y2 in ([] if segments is None else segments[:, 0, :]):
         if x2 == x1:
             continue
@@ -31,38 +33,71 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
             continue
         if min_abs_slope is not None and abs(slope) < float(min_abs_slope):
             continue
+        if max_abs_slope is not None and abs(slope) > float(max_abs_slope):
+            continue
         intercept = y1 - slope * x1
-        midpoint_x = (x1 + x2) / 2.0
-        line_features.append((slope, intercept / max(height, 1), midpoint_x / max(width, 1)))
-        line_parameters.append((slope, intercept))
+        bottom_x = (height - 1 - intercept) / slope
+        reference_x = (reference_y - intercept) / slope
+        if not 0 <= bottom_x < width:
+            continue
+        if not 0 <= reference_x < width:
+            continue
+        side = "left" if slope < 0 and bottom_x < width / 2 else None
+        if slope > 0 and bottom_x > width / 2:
+            side = "right"
+        if side is not None:
+            length = float(np.hypot(x2 - x1, y2 - y1))
+            candidates[side].append((slope, intercept, length, bottom_x,
+                                     reference_x, (x1, y1, x2, y2)))
 
     kmeans_config = config.get("kmeans", {})
     cluster_count = kmeans_config.get("clusters")
-    labels = None
-    if cluster_count is not None and len(line_features) >= int(cluster_count):
-        labels = _manual_kmeans(np.asarray(line_features, dtype=np.float64), int(cluster_count))
-
     fits = {"left": None, "right": None}
-    selected_counts = {"left": 0, "right": 0}
-    if labels is not None:
-        for cluster_id in range(int(cluster_count)):
-            members = [line_parameters[index] for index, label in enumerate(labels)
-                       if label == cluster_id]
-            if not members:
+    line_ranges = {"left": None, "right": None}
+    labels_by_side = {}
+    if cluster_count is not None:
+        for side, side_candidates in candidates.items():
+            if not side_candidates:
                 continue
-            slope, intercept = np.mean(members, axis=0)
-            side = "left" if slope < 0 else "right"
-            # If K-means assigns both groups to one side, keep its larger group.
-            member_count = len(members)
-            if fits[side] is not None and member_count <= selected_counts[side]:
+            side_cluster_count = min(int(cluster_count), len(side_candidates))
+            # Cluster where Hough fragments are visible, instead of extrapolating
+            # every short dash all the way to the image bottom.
+            features = np.asarray([[candidate[4] / max(width, 1)]
+                                   for candidate in side_candidates], dtype=np.float64)
+            labels = _manual_kmeans(features, side_cluster_count)
+            if labels is None:
                 continue
+            labels_by_side[side] = labels.tolist()
+            centers = [float(np.mean([side_candidates[index][4]
+                                      for index, label in enumerate(labels)
+                                      if label == cluster_id]))
+                       for cluster_id in range(side_cluster_count)]
+            # Prefer the lane marking nearest the image center on each side.
+            selected_cluster = min(range(side_cluster_count),
+                                   key=lambda index: abs(centers[index] - width / 2))
+            selected = [candidate for index, candidate in enumerate(side_candidates)
+                        if labels[index] == selected_cluster]
+            points = []
+            weights = []
+            selected_y = []
+            for candidate in selected:
+                _, _, length, _, _, (x1, y1, x2, y2) = candidate
+                points.extend(((y1, x1), (y2, x2)))
+                weights.extend((length, length))
+                selected_y.extend((y1, y2))
+            design = np.column_stack((np.asarray(points)[:, 0],
+                                      np.ones(len(points))))
+            weighted_design = design * np.sqrt(weights)[:, None]
+            weighted_x = np.asarray(points)[:, 1] * np.sqrt(weights)
+            slope_xy, intercept_xy = np.linalg.lstsq(weighted_design, weighted_x, rcond=None)[0]
             # x_norm = B * y_norm + C
-            fits[side] = np.array([0.0, (1.0 / slope) * height / width,
-                                  (-intercept / slope) / width], dtype=np.float64)
-            selected_counts[side] = member_count
+            fits[side] = np.array([0.0, slope_xy * height / width,
+                                  intercept_xy / width], dtype=np.float64)
+            line_ranges[side] = (max(0.0, min(selected_y) / height),
+                                 min(1.0, max(selected_y) / height))
     return {**fits, "edges": edges,
             "segments": [] if segments is None else segments[:, 0, :].tolist(),
-            "cluster_labels": None if labels is None else labels.tolist()}
+            "cluster_labels": labels_by_side, "line_ranges": line_ranges}
 
 
 def _manual_kmeans(features: np.ndarray, cluster_count: int) -> np.ndarray | None:

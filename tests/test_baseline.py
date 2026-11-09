@@ -23,17 +23,23 @@ def test_hough_baseline_uses_kmeans_clusters_for_left_and_right(monkeypatch):
     segments = np.asarray([
         [10, 90, 40, 30], [12, 88, 42, 28],
         [90, 90, 60, 30], [88, 88, 58, 28],
+        [70, 90, 71, 10],
     ], dtype=np.int32)[:, None, :]
     monkeypatch.setattr(cv2, "HoughLinesP", lambda *args, **kwargs: segments)
     config = {
         "roi_polygon": None,
         "hough": {"threshold": 1, "min_line_length": 1, "max_line_gap": 1},
-        "kmeans": {"clusters": 2},
+        "kmeans": {"clusters": 2, "reference_y_fraction": 0.85},
         "min_abs_slope": 0.1,
+        "max_abs_slope": 2.0,
     }
 
     result = detect_baseline(np.zeros((100, 100, 3), dtype=np.uint8), config)
 
     assert result["left"] is not None
     assert result["right"] is not None
-    assert len(result["cluster_labels"]) == len(segments)
+    assert set(result["cluster_labels"]) == {"left", "right"}
+    assert len(result["cluster_labels"]["left"]) == 2
+    assert len(result["cluster_labels"]["right"]) == 2
+    assert result["line_ranges"]["left"] is not None
+    assert result["line_ranges"]["right"] is not None
