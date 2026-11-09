@@ -22,9 +22,7 @@ def main() -> None:
     capture = cv2.VideoCapture(args.input)
     if not capture.isOpened():
         raise SystemExit(f"Cannot open input video: {args.input}")
-    # The CLI consumes dashcam videos by default; use the matching ROI unless
-    # the caller explicitly selects another configured data source.
-    pipeline = LanePipeline(config, args.data_source or "day")
+    pipeline = LanePipeline(config, args.data_source)
     while True:
         ok, frame = capture.read()
         if not ok:
