@@ -1,4 +1,4 @@
-﻿seed: 42
+seed: 42
 method: baseline
 data:
   tusimple: data/tusimple
@@ -18,14 +18,18 @@ pipeline:
 preprocess:
   canny_low: 50
   canny_high: 150
-  gaussian_kernel: [5, 5]
+  gaussian_kernel:
+  - 5
+  - 5
   roi_polygon: null
   hough:
     threshold: null
     min_line_length: null
     max_line_gap: null
   min_abs_slope: null
-  yellow_h_range: [15, 35]
+  yellow_h_range:
+  - 15
+  - 35
   yellow_s_min: 100
   white_l_min: 200
   gradient_channel: L
@@ -36,10 +40,18 @@ enhancement:
   clahe_clip_limit: null
   clahe_tile_grid_size: null
 homography:
-  tusimple: {source: null, destination: null}
-  day: {source: null, destination: null}
-  night: {source: null, destination: null}
-  rain: {source: null, destination: null}
+  tusimple:
+    source: null
+    destination: null
+  day:
+    source: null
+    destination: null
+  night:
+    source: null
+    destination: null
+  rain:
+    source: null
+    destination: null
 fit:
   window_count: null
   window_margin: null
@@ -65,4 +77,24 @@ evaluation:
   tune_samples: null
   seed: 42
   fps_runs: null
-
+  pixel_threshold_px: null
+  lane_accuracy_threshold: null
+dataset_metadata:
+  tusimple_train_samples: null
+  tusimple_test_samples: null
+  dashcam_source_kind: null
+  dashcam_source_or_license: null
+  dashcam_video_count: null
+  dashcam_resolution: null
+  dashcam_fps: null
+  dashcam_device: null
+  dashcam_labeled_frames_per_condition: null
+  culane_optional: false
+  culane_sample_count: null
+course_lessons:
+  canny_roi: null
+  hough: null
+  hls_enhancement: null
+  homography: null
+  sliding_fit: null
+  kalman: null
