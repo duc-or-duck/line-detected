@@ -53,7 +53,10 @@ def test_filter_reduces_curve_rmse(noise, dropout):
     estimates = []
     for i, obs in enumerate(observations):
         estimates.append(kalman.step(None if missing[i] else obs))
-    mask = ~missing
-    raw_rmse = np.sqrt(np.mean((observations[mask] - truth[mask]) ** 2))
-    filtered_rmse = np.sqrt(np.mean((np.asarray(estimates)[mask] - truth[mask]) ** 2))
+    held = observations.copy()
+    for i in range(1, len(held)):
+        if missing[i]:
+            held[i] = held[i - 1]
+    raw_rmse = np.sqrt(np.mean((held - truth) ** 2))
+    filtered_rmse = np.sqrt(np.mean((np.asarray(estimates) - truth) ** 2))
     assert filtered_rmse < raw_rmse
