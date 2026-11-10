@@ -7,6 +7,7 @@ data:
   night: data/dashcam/night
   rain: data/dashcam/rain
 pipeline:
+  default_data_source: day
   color_threshold: false
   roi: true
   perspective: false
@@ -26,6 +27,7 @@ preprocess:
   - [849, 300]
   - [1157, 700]
   - [180, 700]
+  roi_reference_size: [1280, 720]
   roi_polygon_by_source:
     culane: null
     day:
@@ -33,10 +35,43 @@ preprocess:
     - [780, 400]
     - [1200, 719]
     - [80, 719]
+    night:
+    - [535, 465]
+    - [665, 465]
+    - [830, 720]
+    - [190, 720]
+    rain:
+    - [517, 430]
+    - [770, 430]
+    - [1182, 550]
+    - [98, 550]
   hough:
     threshold: 30
     min_line_length: 60
     max_line_gap: 80
+  hough_by_source:
+    night:
+      threshold: 16
+      min_line_length: 24
+      max_line_gap: 72
+    rain:
+      threshold: 8
+      min_line_length: 10
+      max_line_gap: 100
+  auto_canny: true
+  canny_sigma: 0.33
+  clahe_clip_limit: 2.0
+  clahe_tile_grid: [8, 8]
+  canny_by_source:
+    night:
+      clahe_clip_limit: 3.0
+      canny_sigma: 0.4
+    rain:
+      clahe_clip_limit: 4.0
+      canny_sigma: 0.1
+  vanishing_point_tolerance_by_source:
+    night: 0.18
+    rain: 0.18
   min_abs_slope: 0.4
   max_abs_slope: 4.0
   yellow_h_range:

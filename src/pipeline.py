@@ -48,7 +48,13 @@ class LanePipeline:
         preprocess_cfg = self.config.get("preprocess", {})
         roi_polygon = preprocess_cfg.get("roi_polygon_by_source", {}).get(
             self.data_source, preprocess_cfg.get("roi_polygon"))
-        source_preprocess_cfg = preprocess_cfg | {"roi_polygon": roi_polygon}
+        reference_size = preprocess_cfg.get("roi_reference_size")
+        if roi_polygon and reference_size:
+            ref_width, ref_height = map(float, reference_size)
+            roi_polygon = [[round(point[0] * width / ref_width),
+                            round(point[1] * height / ref_height)] for point in roi_polygon]
+        source_preprocess_cfg = preprocess_cfg | {"roi_polygon": roi_polygon,
+                                                   "data_source": self.data_source}
         line_ranges = None
         matrix = None
         valid_left = valid_right = single_line = False
@@ -69,8 +75,8 @@ class LanePipeline:
                 self.previous_display_ranges = line_ranges
                 offset_left, offset_right = left, right
             else:
-                left, right = self.previous_baseline_fits or (None, None)
-                line_ranges = self.previous_display_ranges
+                left, right = None, None
+                line_ranges = None
                 offset_left, offset_right = (None, None)
             if pipeline.get("kalman", False):
                 if lane_measurement_available:

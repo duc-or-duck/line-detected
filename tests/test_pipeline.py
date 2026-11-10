@@ -25,6 +25,18 @@ def test_baseline_runs_with_unknown_hough_values_without_guessing():
     assert "preprocess_detection" in result["timings_ms"]
 
 
+def test_baseline_does_not_paint_stale_lanes_over_missing_frame():
+    config = load_config("configs/A.yaml")
+    pipeline = LanePipeline(config, "night")
+    pipeline.previous_baseline_fits = (np.array([0.0, 0.0, .25]),
+                                       np.array([0.0, 0.0, .75]))
+    pipeline.previous_display_fits = pipeline.previous_baseline_fits
+    pipeline.previous_display_ranges = {"left": (0.2, 1.0), "right": (0.2, 1.0)}
+    result = pipeline.process(np.zeros((80, 120, 3), dtype=np.uint8), "baseline")
+    assert result["left"] is None and result["right"] is None
+    assert not np.any(np.all(result["frame"] == [0, 255, 0], axis=2))
+
+
 def test_proposed_pipeline_runs_with_unknown_geometry_unavailable():
     config = load_config("configs/C.yaml")
     result = LanePipeline(config, "day").process(np.zeros((80, 120, 3), dtype=np.uint8))
