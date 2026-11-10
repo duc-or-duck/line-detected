@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.warp import unwarp_lane_fit, unwarp_points, warp_image
+from src.warp import unwarp_lane_fit, unwarp_points, vehicle_x_in_bev, warp_image
 
 
 def test_warp_disabled_when_points_are_unknown():
@@ -24,3 +24,8 @@ def test_unwarp_lane_fit_restores_original_normalized_curve():
     fit = np.array([.1, -.2, .4])
     restored = unwarp_lane_fit(fit, identity, 100, 200)
     np.testing.assert_allclose(restored, fit, atol=1e-5)
+
+
+def test_vehicle_center_is_projected_through_homography():
+    matrix = np.asarray([[1, 0, -15], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
+    assert vehicle_x_in_bev(101, 100, matrix) == 35.5

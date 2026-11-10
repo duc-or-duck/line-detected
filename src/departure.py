@@ -6,11 +6,14 @@ import numpy as np
 
 
 def calculate_offset(left: np.ndarray | None, right: np.ndarray | None,
-                     frame_width: int, lane_width_m: float | None) -> dict:
+                     frame_width: int, lane_width_m: float | None,
+                     vehicle_x_px: float | None = None, y_eval: float = 1.0,
+                     meters_per_pixel: float | None = None,
+                     reuse_scale: bool = False) -> dict:
     if left is None or right is None:
         return {"offset_m": None, "offset_px": None, "lane_width_norm": None,
                 "center_norm": None, "center_px": None, "vehicle_center_px": None}
-    y = 1.0
+    y = float(y_eval)
     left_x, right_x = float(np.polyval(left, y)), float(np.polyval(right, y))
     width = right_x - left_x
     if not np.isfinite(width) or width <= 0:
@@ -18,12 +21,17 @@ def calculate_offset(left: np.ndarray | None, right: np.ndarray | None,
                 "center_norm": None, "center_px": None, "vehicle_center_px": None}
     center = (left_x + right_x) / 2.0
     pixel_scale = max(frame_width - 1, 1)
-    offset_px = (0.5 - center) * pixel_scale
-    offset_m = (offset_px * lane_width_m / (width * pixel_scale)
-                if lane_width_m is not None else None)
+    vehicle_x = (frame_width - 1) / 2.0 if vehicle_x_px is None else float(vehicle_x_px)
+    center_px = center * pixel_scale
+    offset_px = vehicle_x - center_px
+    if meters_per_pixel is None and not reuse_scale and lane_width_m is not None:
+        meters_per_pixel = float(lane_width_m) / (width * pixel_scale)
+    offset_m = offset_px * meters_per_pixel if meters_per_pixel is not None else None
     return {"offset_m": offset_m,
             "offset_px": offset_px, "lane_width_norm": width, "center_norm": center,
-            "center_px": center * pixel_scale, "vehicle_center_px": (frame_width - 1) / 2.0}
+            "center_px": center_px, "vehicle_center_px": vehicle_x,
+            "meters_per_pixel": meters_per_pixel,
+            "left_x_px": left_x * pixel_scale, "right_x_px": right_x * pixel_scale}
 
 
 class DepartureWarning:
@@ -42,21 +50,21 @@ class DepartureWarning:
         if (offset_m is None or lane_width_m is None or
                 any(cfg.get(key) is None for key in required)):
             self.candidate_count = 0
-            return {"warning": None, "state": "UNAVAILABLE", "tlc_s": None, "available": False}
+            return {"warning": self.active, "state": self.state, "tlc_s": None, "available": False}
         tlc = None
-        if offset_velocity_mps is not None and abs(offset_velocity_mps) > 0:
-            toward = np.sign(offset_velocity_mps) == np.sign(offset_m)
-            if toward:
+        if offset_velocity_mps is not None:
+            if abs(offset_velocity_mps) <= 1e-9:
+                tlc = float("inf")
+            elif np.sign(offset_velocity_mps) == np.sign(offset_m):
                 remaining = max(float(lane_width_m) / 2.0 - abs(offset_m), 0.0)
                 tlc = remaining / abs(offset_velocity_mps)
         danger_threshold = cfg.get("danger_offset_m")
         danger_condition = (danger_threshold is not None and
                             abs(offset_m) >= float(danger_threshold))
-        condition = (abs(offset_m) >= float(cfg["on_offset_m"]) or danger_condition or
-                     (tlc is not None and tlc <= float(cfg["tlc_threshold_s"])))
+        offset_condition = abs(offset_m) > float(cfg["on_offset_m"]) or danger_condition
+        tlc_condition = tlc is not None and tlc < float(cfg["tlc_threshold_s"])
         if self.active:
-            tlc_safe = tlc is None or tlc > float(cfg["tlc_threshold_s"])
-            if abs(offset_m) <= float(cfg["off_offset_m"]) and tlc_safe:
+            if abs(offset_m) < float(cfg["off_offset_m"]):
                 self.active = False
                 self.candidate_count = 0
                 self.state = "SAFE"
@@ -64,7 +72,11 @@ class DepartureWarning:
                 self.state = "DANGER"
             else:
                 self.state = "WARNING"
-        elif condition:
+        elif tlc_condition:
+            self.active = True
+            self.candidate_count = 0
+            self.state = "DANGER" if danger_condition else "WARNING"
+        elif offset_condition:
             self.candidate_count += 1
             if self.candidate_count >= int(cfg["consecutive_frames"]):
                 self.active = True
