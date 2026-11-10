@@ -27,6 +27,23 @@ def test_baseline_uses_roi_center_when_frame_is_not_lane_centered(monkeypatch):
     assert result["left"] is not None and result["right"] is not None
 
 
+def test_baseline_uses_source_slope_threshold_for_gently_sloped_lanes(monkeypatch):
+    segments = np.asarray([[25, 95, 58, 85], [80, 85, 94, 99]], dtype=np.int32)[:, None, :]
+    monkeypatch.setattr(cv2, "HoughLinesP", lambda *args, **kwargs: segments)
+    config = {
+        "data_source": "rain",
+        "roi_polygon": [[0, 85], [99, 85], [99, 99], [0, 99]],
+        "hough": {"threshold": 1, "min_line_length": 1, "max_line_gap": 1},
+        "min_abs_slope": .4,
+        "min_abs_slope_by_source": {"rain": .25},
+        "max_abs_slope": 4.0,
+    }
+
+    result = detect_baseline(np.zeros((100, 100, 3), dtype=np.uint8), config)
+
+    assert result["left"] is not None and result["right"] is not None
+
+
 def test_baseline_clips_small_vanishing_point_crossing(monkeypatch):
     segments = np.asarray([[55, 20, 25, 80], [45, 20, 75, 80]], dtype=np.int32)[:, None, :]
     monkeypatch.setattr(cv2, "HoughLinesP", lambda *args, **kwargs: segments)

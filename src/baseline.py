@@ -30,8 +30,10 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
     else:
         roi_top, roi_bottom = 0, height - 1
     candidates = {"left": [], "right": []}
-    min_abs_slope = config.get("min_abs_slope")
-    max_abs_slope = config.get("max_abs_slope")
+    min_abs_slope = config.get("min_abs_slope_by_source", {}).get(
+        config.get("data_source"), config.get("min_abs_slope"))
+    max_abs_slope = config.get("max_abs_slope_by_source", {}).get(
+        config.get("data_source"), config.get("max_abs_slope"))
     for x1, y1, x2, y2 in ([] if segments is None else segments[:, 0, :]):
         if x2 == x1:
             continue

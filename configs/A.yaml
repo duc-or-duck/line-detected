@@ -73,6 +73,9 @@ preprocess:
     night: 0.18
     rain: 0.18
   min_abs_slope: 0.4
+  min_abs_slope_by_source:
+    night: 0.2
+    rain: 0.1
   max_abs_slope: 4.0
   yellow_h_range:
   - 15
