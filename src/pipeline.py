@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import copy
 import time
 from pathlib import Path
@@ -11,7 +12,7 @@ import numpy as np
 import yaml
 
 from .baseline import detect_baseline
-from .departure import DepartureWarning, calculate_offset
+from .departure import DepartureWarning, calculate_offset, compute_lateral_velocity_and_tlc
 from .kalman import LaneKalmanFilter
 from .lane_fit import fit_support_overlaps, sliding_window_fit, validate_and_recover_lanes
 from .preprocess import canny_edges, lane_mask, roi_mask
@@ -39,6 +40,17 @@ class LanePipeline:
         self.frame_index = 0
         self.filters = None
         self.warning = DepartureWarning(self.config.get("departure", {}))
+        # Baseline temporal smoothing & anti-jump
+        k = int(self.config.get("preprocess", {}).get("smoothing_k", 5))
+        self.baseline_history = collections.deque(maxlen=k)
+        self.baseline_smoothed = None
+        self.baseline_hold_count = 0
+        self.baseline_hold_max = int(self.config.get("preprocess", {}).get("hold_max_frames", 8))
+        self.baseline_jump_px = float(self.config.get("preprocess", {}).get("jump_px", 80))
+        self.baseline_d_history = collections.deque(maxlen=max(k, 3))
+        self.baseline_last_valid_xm = None
+        self.cam_offset_px = float(self.config.get("cam_offset_px", 0))
+        self.csv_records = []
 
     def process(self, frame: np.ndarray, method: str = "proposed",
                 fps: float | None = None) -> dict:
@@ -48,7 +60,8 @@ class LanePipeline:
         preprocess_cfg = self.config.get("preprocess", {})
         roi_polygon = preprocess_cfg.get("roi_polygon_by_source", {}).get(
             self.data_source, preprocess_cfg.get("roi_polygon"))
-        reference_size = preprocess_cfg.get("roi_reference_size")
+        reference_size = preprocess_cfg.get("roi_reference_size_by_source", {}).get(
+            self.data_source, preprocess_cfg.get("roi_reference_size"))
         if roi_polygon and reference_size:
             ref_width, ref_height = map(float, reference_size)
             roi_polygon = [[round(point[0] * width / ref_width),
@@ -60,24 +73,116 @@ class LanePipeline:
         valid_left = valid_right = single_line = False
         lane_measurement_available = False
         offset_left = offset_right = None
+        lost = False
         if method == "baseline":
+            # Condition auto-switch (SPEC: dark_thr -> night; low contrast -> rain)
+            active_source = self.data_source
+            if self.config.get("condition_auto"):
+                gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
+                if roi_polygon:
+                    mask_full = np.zeros(gray_full.shape[:2], dtype=np.uint8)
+                    cv2.fillPoly(mask_full, [np.asarray(roi_polygon, dtype=np.int32)], 255)
+                    rvals = gray_full[mask_full > 0]
+                    rmed = float(np.median(rvals)) if rvals.size else float(np.median(gray_full))
+                    rstd = float(np.std(rvals)) if rvals.size else float(np.std(gray_full))
+                else:
+                    rmed, rstd = float(np.median(gray_full)), float(np.std(gray_full))
+                dark_thr = float(self.config.get("condition_auto", {}).get("dark_threshold", 70))
+                cont_thr = float(self.config.get("condition_auto", {}).get("contrast_threshold", 45))
+                if rmed < dark_thr:
+                    active_source = "night"
+                elif rstd < cont_thr:
+                    active_source = "rain"
+                else:
+                    active_source = self.data_source or "day"
+                if active_source != self.data_source and preprocess_cfg.get("roi_polygon_by_source", {}).get(active_source):
+                    roi_polygon = preprocess_cfg["roi_polygon_by_source"][active_source]
+                    if reference_size:
+                        ref_w, ref_h = map(float, reference_size)
+                        roi_polygon = [[round(p[0] * width / ref_w), round(p[1] * height / ref_h)] for p in roi_polygon]
+                    source_preprocess_cfg["roi_polygon"] = roi_polygon
+                source_preprocess_cfg["data_source"] = active_source
+
             start = time.perf_counter()
             found = detect_baseline(frame, source_preprocess_cfg)
             blocks["preprocess_detection"] = (time.perf_counter() - start) * 1000
             binary = found["edges"]
             line_ranges = found.get("line_ranges")
-            valid_left, valid_right = found["left"] is not None, found["right"] is not None
-            lane_measurement_available = valid_left and valid_right
-            if lane_measurement_available:
-                left, right = found["left"], found["right"]
-                self.previous_baseline_fits = (left.copy(), right.copy())
-                self.previous_display_fits = (left.copy(), right.copy())
-                self.previous_display_ranges = line_ranges
-                offset_left, offset_right = left, right
+            raw_left, raw_right = found["left"], found["right"]
+
+            use_anti_jump = preprocess_cfg.get("smoothing_k") is not None
+            if use_anti_jump:
+                raw_valid = raw_left is not None and raw_right is not None
+                if raw_valid:
+                    # (a) Validity check: opposite signs, left < right at 10 rows, width within [w_min, w_max]
+                    sl_l, sl_r = raw_left[1], raw_right[1]
+                    if sl_l >= 0 or sl_r <= 0:
+                        raw_valid = False
+                    else:
+                        y_test = np.linspace(0.6, 1.0, 10)
+                        xl_test = np.polyval(raw_left, y_test)
+                        xr_test = np.polyval(raw_right, y_test)
+                        if np.any(xl_test >= xr_test):
+                            raw_valid = False
+                        else:
+                            bot_w = (xr_test[-1] - xl_test[-1]) * (width - 1)
+                            w_min = float(preprocess_cfg.get("validity_width_min_frac", 0.20)) * width
+                            w_max = float(preprocess_cfg.get("validity_width_max_frac", 0.90)) * width
+                            if bot_w < w_min or bot_w > w_max:
+                                raw_valid = False
+
+                    # (b) Jump gate: reject if bottom x differs from smoothed previous by > jump_px
+                    if raw_valid and self.baseline_smoothed is not None:
+                        prev_l, prev_r = self.baseline_smoothed
+                        curr_bot_l = np.polyval(raw_left, 1.0) * (width - 1)
+                        curr_bot_r = np.polyval(raw_right, 1.0) * (width - 1)
+                        prev_bot_l = np.polyval(prev_l, 1.0) * (width - 1)
+                        prev_bot_r = np.polyval(prev_r, 1.0) * (width - 1)
+                        if (abs(curr_bot_l - prev_bot_l) > self.baseline_jump_px or
+                                abs(curr_bot_r - prev_bot_r) > self.baseline_jump_px):
+                            raw_valid = False
+
+                if raw_valid:
+                    # (c) Smoothing: median of last K accepted pairs
+                    self.baseline_history.append((raw_left.copy(), raw_right.copy()))
+                    sm_l = np.median([h[0] for h in self.baseline_history], axis=0)
+                    sm_r = np.median([h[1] for h in self.baseline_history], axis=0)
+                    self.baseline_smoothed = (sm_l, sm_r)
+                    self.baseline_hold_count = 0
+                    left, right = sm_l.copy(), sm_r.copy()
+                    lane_measurement_available = valid_left = valid_right = True
+                else:
+                    # (d) Hold on reject: hold last accepted lines up to hold_max frames
+                    if self.baseline_smoothed is not None and self.baseline_hold_count < self.baseline_hold_max:
+                        self.baseline_hold_count += 1
+                        left, right = self.baseline_smoothed[0].copy(), self.baseline_smoothed[1].copy()
+                        lane_measurement_available = valid_left = valid_right = True
+                    else:
+                        left, right = None, None
+                        lane_measurement_available = valid_left = valid_right = False
+                        lost = True
+                        self.baseline_hold_count = 0
+
+                if lane_measurement_available:
+                    self.previous_baseline_fits = (left.copy(), right.copy())
+                    self.previous_display_fits = (left.copy(), right.copy())
+                    self.previous_display_ranges = line_ranges
+                    offset_left, offset_right = left, right
+                else:
+                    offset_left, offset_right = None, None
             else:
-                left, right = None, None
-                line_ranges = None
-                offset_left, offset_right = (None, None)
+                valid_left, valid_right = found["left"] is not None, found["right"] is not None
+                lane_measurement_available = valid_left and valid_right
+                if lane_measurement_available:
+                    left, right = found["left"], found["right"]
+                    self.previous_baseline_fits = (left.copy(), right.copy())
+                    self.previous_display_fits = (left.copy(), right.copy())
+                    self.previous_display_ranges = line_ranges
+                    offset_left, offset_right = left, right
+                else:
+                    left, right = None, None
+                    line_ranges = None
+                    offset_left, offset_right = (None, None)
             if pipeline.get("kalman", False):
                 if lane_measurement_available:
                     left, right = self._filter_fits(left, right)
@@ -217,13 +322,15 @@ class LanePipeline:
             raise ValueError("method must be 'baseline' or 'proposed'")
 
         if method == "baseline":
-            offset_left, offset_right = (found["left"], found["right"])
+            offset_left, offset_right = (left, right)
         departure_start = time.perf_counter()
         departure_cfg = self.config.get("departure", {})
         lane_width_m = departure_cfg.get("lane_width_m")
         current_fps = fps or self.config.get("dataset_metadata", {}).get("dashcam_fps")
         meter_scale_override = self.last_meters_per_pixel if single_line else None
         vehicle_x = vehicle_x_in_bev(width, height, matrix)
+        if method == "baseline" and self.cam_offset_px != 0:
+            vehicle_x += self.cam_offset_px
         offset = calculate_offset(offset_left, offset_right, width,
                                   float(lane_width_m) if lane_width_m is not None else None,
                                   vehicle_x_px=vehicle_x,
@@ -236,11 +343,30 @@ class LanePipeline:
                                   reuse_scale=single_line)
         if lane_measurement_available and not single_line:
             self.last_meters_per_pixel = offset.get("meters_per_pixel")
-        velocity = self._offset_velocity(offset_left, offset_right,
-                                         offset.get("meters_per_pixel"), current_fps, width)
+            self.baseline_last_valid_xm = offset.get("meters_per_pixel")
+        elif lost and self.baseline_last_valid_xm is not None:
+            offset["meters_per_pixel"] = self.baseline_last_valid_xm
+
+        baseline_tlc = None
+        if method == "baseline":
+            d_curr = offset.get("offset_m")
+            self.baseline_d_history.append(d_curr)
+            velocity, baseline_tlc = compute_lateral_velocity_and_tlc(
+                list(self.baseline_d_history), float(current_fps or 30.0),
+                float(lane_width_m or 3.7))
+        else:
+            velocity = self._offset_velocity(offset_left, offset_right,
+                                             offset.get("meters_per_pixel"), current_fps, width)
+
         if pipeline.get("warning", True):
-            warning_offset = offset.get("offset_m") if lane_measurement_available else None
-            warning = self.warning.update(warning_offset, velocity, lane_width_m)
+            if lost:
+                warning = {"warning": self.warning.active, "state": self.warning.state,
+                           "tlc_s": None, "available": False}
+            else:
+                warning_offset = offset.get("offset_m") if lane_measurement_available else None
+                warning = self.warning.update(warning_offset, velocity, lane_width_m)
+                if baseline_tlc is not None and (warning.get("tlc_s") is None or not np.isfinite(warning.get("tlc_s", float("inf")))):
+                    warning["tlc_s"] = baseline_tlc
         else:
             warning = {"warning": False, "state": "SAFE" if lane_measurement_available else self.warning.state,
                        "tlc_s": None, "available": lane_measurement_available}
@@ -273,12 +399,23 @@ class LanePipeline:
         self._draw(output, left, right, warning.get("warning"), roi_polygon, line_ranges,
                    draw_lane_center, draw_vehicle_center,
                    offset.get("offset_px") if lane_measurement_available else None,
-                   display_state, clip_roi=True, marker_y=marker_y)
+                   display_state, clip_roi=True, marker_y=marker_y,
+                   lost=lost, offset_m=offset.get("offset_m"), tlc_s=warning.get("tlc_s"))
         departure_record = {"frame": self.frame_index, "d_m": offset.get("offset_m"),
                             "TLC": warning.get("tlc_s"),
                             "warning": warning.get("warning") if warning.get("available") else None,
                             "valid_left": valid_left, "valid_right": valid_right,
                             "single_line": single_line}
+        csv_record = {
+            "frame": self.frame_index,
+            "d_m": offset.get("offset_m"),
+            "tlc_s": warning.get("tlc_s"),
+            "warning": warning.get("warning") if not lost else None,
+            "lost": lost,
+            "x_left": offset.get("left_x_px"),
+            "x_right": offset.get("right_x_px"),
+        }
+        self.csv_records.append(csv_record)
         return {"frame": output, "binary": binary, "left": left, "right": right,
                 "offset_m": offset.get("offset_m"), "offset_px": offset.get("offset_px"),
                 "x_vehicle": vehicle_x, "x_left": offset.get("left_x_px"),
@@ -287,7 +424,7 @@ class LanePipeline:
                 "lane_measurement_available": lane_measurement_available,
                 "valid_left": valid_left, "valid_right": valid_right,
                 "single_line": single_line, "warning": warning,
-                "departure_record": departure_record, "timings_ms": blocks}
+                "departure_record": departure_record, "timings_ms": blocks, "lost": lost}
 
     def _filter_fits(self, left, right):
         cfg = self.config.get("kalman", {})
@@ -316,7 +453,7 @@ class LanePipeline:
     @staticmethod
     def _draw(frame: np.ndarray, left, right, warning, roi_polygon=None, line_ranges=None,
               lane_center_px=None, vehicle_center_px=None, offset_px=None, warning_state=None,
-              clip_roi=True, marker_y=None) -> None:
+              clip_roi=True, marker_y=None, lost=False, offset_m=None, tlc_s=None) -> None:
         height, width = frame.shape[:2]
         original = frame.copy() if roi_polygon else None
         region = None
@@ -343,16 +480,34 @@ class LanePipeline:
                         cv2.polylines(frame, [points[run]], False, (0, 255, 0), 3)
         if region is not None and clip_roi:
             frame[region == 0] = original[region == 0]
-        if warning is None or warning_state == "UNAVAILABLE":
+        if lost:
+            color = (128, 128, 128)
+            label = "MẤT LÀN"
+        elif warning is None or warning_state == "UNAVAILABLE":
             color = (0, 165, 255)
+            label = "CHUA THAY DU 2 VACH" if offset_px is None else "CHUA CAU HINH CANH BAO"
         elif warning is True:
-            color = (0, 0, 255) if warning_state == "DANGER" else (0, 165, 255)
+            color = (0, 0, 255) if warning_state == "DANGER" else (0, 100, 255)
+            label = "CẢNH BÁO CHỆCH LÀN"
         else:
             color = (0, 200, 0)
-        label = warning_state or ("WARNING" if warning else "SAFE")
-        if label == "UNAVAILABLE":
-            label = "CHUA THAY DU 2 VACH" if offset_px is None else "CHUA CAU HINH CANH BAO"
+            label = warning_state or "SAFE"
         cv2.putText(frame, label, (24, 42), cv2.FONT_HERSHEY_SIMPLEX, .8, color, 2, cv2.LINE_AA)
+
+        if warning is True and offset_px is not None:
+            arrow_start_x = width // 2
+            arrow_y = height - 50
+            arrow_end_x = arrow_start_x + (120 if offset_px > 0 else -120)
+            cv2.arrowedLine(frame, (arrow_start_x, arrow_y), (arrow_end_x, arrow_y),
+                            (0, 0, 255), 4, tipLength=0.3)
+
+        if offset_m is not None:
+            d_text = f"d = {offset_m:+.2f} m ({offset_px:+.1f} px)" if offset_px is not None else f"d = {offset_m:+.2f} m"
+            cv2.putText(frame, d_text, (24, 76), cv2.FONT_HERSHEY_SIMPLEX, .65, (255, 255, 255), 2, cv2.LINE_AA)
+        if tlc_s is not None and np.isfinite(float(tlc_s)):
+            cv2.putText(frame, f"TLC = {float(tlc_s):.1f} s", (24, 106),
+                        cv2.FONT_HERSHEY_SIMPLEX, .65, (255, 255, 255), 2, cv2.LINE_AA)
+
         if lane_center_px is not None and vehicle_center_px is not None:
             y = height - 18 if marker_y is None else int(marker_y)
             cv2.line(frame, (int(lane_center_px), y - 12), (int(lane_center_px), y + 8),

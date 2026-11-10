@@ -106,3 +106,71 @@ def false_alarms_per_minute(warnings: list[bool], true_departures: list[bool], f
                        and not true_departures[index]
                        for index, active in enumerate(warnings))
     return false_onsets / duration_minutes
+
+
+def compute_lateral_velocity_and_tlc(d_history: list[float | None], fps: float,
+                                     lane_width_m: float = 3.7) -> tuple[float | None, float | None]:
+    """Compute lateral velocity v = (d_t - d_{t-k}) / (k/fps) and TLC.
+
+    TLC = distance_to_marking / |v| when moving toward the marking (v * d > 0), else inf.
+    """
+    valid = [float(d) for d in d_history if d is not None]
+    if len(valid) < 2 or fps <= 0:
+        return None, None
+    k = len(valid) - 1
+    dt = k / float(fps)
+    if dt <= 1e-9:
+        return None, None
+    v = (valid[-1] - valid[0]) / dt
+    d_curr = valid[-1]
+    if abs(v) <= 1e-9:
+        tlc = float("inf")
+    elif np.sign(v) == np.sign(d_curr):
+        distance = max(float(lane_width_m) / 2.0 - abs(d_curr), 0.0)
+        tlc = distance / abs(v)
+    else:
+        tlc = float("inf")
+    return v, tlc
+
+
+def calculate_straight_lines_offset(left_line: tuple[float, float] | None,
+                                    right_line: tuple[float, float] | None,
+                                    y_eval: float, frame_width: int,
+                                    lane_width_m: float | None = 3.7,
+                                    cam_offset_px: float = 0.0,
+                                    last_meters_per_pixel: float | None = None) -> dict:
+    """Straight-line adapter for baseline departure warning calculation.
+
+    left_line, right_line: (slope, intercept) where y = slope * x + intercept,
+    or None if lost.
+    y_eval: y row (pixels) at which to evaluate offset (typically ROI bottom).
+    """
+    if left_line is None or right_line is None:
+        return {"offset_m": None, "offset_px": None, "d": None,
+                "x_left": None, "x_right": None, "meters_per_pixel": last_meters_per_pixel}
+    sl_l, ic_l = left_line
+    sl_r, ic_r = right_line
+    if abs(sl_l) < 1e-9 or abs(sl_r) < 1e-9:
+        return {"offset_m": None, "offset_px": None, "d": None,
+                "x_left": None, "x_right": None, "meters_per_pixel": last_meters_per_pixel}
+    x_left = (y_eval - ic_l) / sl_l
+    x_right = (y_eval - ic_r) / sl_r
+    lane_width_px = x_right - x_left
+    if lane_width_px <= 0:
+        return {"offset_m": None, "offset_px": None, "d": None,
+                "x_left": x_left, "x_right": x_right, "meters_per_pixel": last_meters_per_pixel}
+
+    x_vehicle = (frame_width - 1) / 2.0 + float(cam_offset_px)
+    x_m = float(lane_width_m) / lane_width_px if lane_width_m is not None else last_meters_per_pixel
+    d = (x_vehicle - (x_left + x_right) / 2.0) * x_m if x_m is not None else None
+    offset_px = x_vehicle - (x_left + x_right) / 2.0
+    return {
+        "offset_m": d,
+        "d": d,
+        "offset_px": offset_px,
+        "x_left": x_left,
+        "x_right": x_right,
+        "meters_per_pixel": x_m,
+        "lane_width_px": lane_width_px,
+        "x_vehicle": x_vehicle,
+    }

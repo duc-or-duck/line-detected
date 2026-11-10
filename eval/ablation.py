@@ -33,13 +33,21 @@ def main() -> None:
     rows = []
     pixel_rows = []
     reasons = []
-    for name in "ABCDEF":
-        config = load_config(ROOT / "configs" / f"{name}.yaml")
+    config_names = ["A", "A+", "B", "C", "D", "E", "F"]
+    for name in config_names:
+        cfg_file = "A_opt.yaml" if name == "A+" else f"{name}.yaml"
+        cfg_path = ROOT / "configs" / cfg_file
+        if not cfg_path.is_file():
+            row_label = "A+ (baseline tối ưu)" if name == "A+" else f"{name}. " + _label(name)
+            rows.append([row_label, NA, NA, NA, NA, 0, "Thiếu tệp cấu hình"])
+            continue
+        config = load_config(cfg_path)
         score = evaluate(config, root, labels, "test")
         reason = score.get("reason", "") or "Không có kết quả"
         reasons.append(reason)
         accuracy = score.get("accuracy")
-        rows.append([f"{name}. " + _label(name), _value(100 * accuracy if accuracy is not None else None),
+        row_label = "A+ (baseline tối ưu)" if name == "A+" else f"{name}. " + _label(name)
+        rows.append([row_label, _value(100 * accuracy if accuracy is not None else None),
                      _value(score.get("fp")), _value(score.get("fn")),
                      _value(score.get("pixel_error")), score.get("frames", 0), reason])
         per_height = score.get("errors_by_sample", [])
@@ -47,24 +55,28 @@ def main() -> None:
         pixel_rows.extend([[name, height,
                             per_height[index] if index < len(per_height) and per_height[index] is not None else NA]
                            for index, height in enumerate(H_SAMPLES)])
-    write_csv("Bảng_4.3_ablation_tusimple.csv",
-              ["Cấu hình", "Accuracy (%)", "FP", "FN", "Sai số (px)", "Số khung", "Ghi chú"], rows)
+    ablation_headers = ["Cấu hình", "Accuracy (%)", "FP", "FN", "Sai số (px)", "Số khung", "Ghi chú"]
+    write_csv("Bảng_4.3_ablation_tusimple.csv", ablation_headers, rows)
     write_csv("Bảng_4.3_pixel_error_h_samples.csv",
               ["Cấu hình", "h_samples (px)", "Sai số trung bình (px)"], pixel_rows)
 
+    dashcam_headers = ["Điều kiện", "Số khung gán nhãn", "Baseline (A) (%)", "Đề xuất (F) (%)", "fps", "Ghi chú"]
     dashcam_rows = _dashcam_rows(args.dashcam_labels)
-    write_csv("Bảng_4.4_dashcam.csv",
-              ["Điều kiện", "Số khung gán nhãn", "Baseline (A) (%)", "Đề xuất (F) (%)", "fps", "Ghi chú"],
-              dashcam_rows)
+    write_csv("Bảng_4.4_dashcam.csv", dashcam_headers, dashcam_rows)
     timing_rows = [[block, NA, NA, NA, NA, "Chưa chạy benchmark với số lần lặp N đã cấu hình"]
                    for block in ("Tiền xử lý và tách vạch", "Bird's-eye view",
                                  "Cửa sổ trượt và đa thức", "Kalman và gating",
                                  "Độ lệch và cảnh báo", "Tổng")]
     write_csv("Bảng_4.6_runtime.csv", ["Khối", "Thời gian (ms)", "Tỷ lệ (%)",
                                       "FPS trung bình", "Số khung", "Ghi chú"], timing_rows)
-    write_csv("Hình_4.3_departure_warning.csv",
-              ["Logic cảnh báo", "Cảnh báo sai mỗi phút", "Ghi chú"],
-              _warning_rows(args.warning_labels))
+    warning_headers = ["Logic cảnh báo", "Cảnh báo sai mỗi phút", "Ghi chú"]
+    warning_rows = _warning_rows(args.warning_labels)
+    write_csv("Hình_4.3_departure_warning.csv", warning_headers, warning_rows)
+
+    # Bảng Jitter & Frame-to-frame stability (A vs A+)
+    jitter_headers = ["Điều kiện", "Jitter A (std px)", "Jumps A (>80px)", "Jitter A+ (std px)", "Jumps A+ (>80px)", "Kết luận"]
+    jitter_rows = _compute_jitter_table()
+    write_csv("Bảng_4.8_jitter.csv", jitter_headers, jitter_rows)
 
     placeholder_png("Hình_4.1_hough_sensitivity.png", "Hình 4.1. Độ nhạy tham số Hough",
                     "Thiếu dữ liệu TuSimple và các giá trị tham số Hough.")
@@ -74,7 +86,21 @@ def main() -> None:
                     "Thiếu video và ngưỡng cảnh báo trong YAML.")
     placeholder_png("Hình_4.4_error_examples.png", "Hình 4.4. Khung hình lỗi ban đêm và trời mưa",
                     "Thiếu video và khung hình có nhãn.")
-    print("Đã ghi bảng và hình vào results/. Các ô n/a kèm lý do do thiếu dữ liệu hoặc giá trị cấu hình.")
+
+    # In ra man hinh cac bang ket qua theo yeu cau
+    print("\n=== BẢNG 4.3: ABLATION TUSIMPLE ===")
+    _print_table(ablation_headers, rows)
+
+    print("\n=== BẢNG 4.4: DASHCAM PERFORMANCE ===")
+    _print_table(dashcam_headers, dashcam_rows)
+
+    print("\n=== BẢNG ĐỘ ỔN ĐỊNH VÀ CHỐNG NHẢY KHUNG HÌNH (JITTER: A vs A+) ===")
+    _print_table(jitter_headers, jitter_rows)
+
+    print("\n=== BẢNG CẢNH BÁO CHỆCH LÀN (DEPARTURE WARNING: FALSE ALARMS) ===")
+    _print_table(warning_headers, warning_rows)
+
+    print("\nĐã ghi bảng và hình vào results/. Các ô n/a kèm lý do do thiếu dữ liệu hoặc giá trị cấu hình.")
 
 
 def _read_rows(path: str | None) -> list[dict[str, str]]:
@@ -99,7 +125,10 @@ def _dashcam_rows(label_path: str | None) -> list[list[object]]:
     annotations = _read_rows(label_path)
     labels = {"day": "Ban ngày", "night": "Ban đêm", "rain": "Trời mưa"}
     if not annotations:
-        return [[label, NA, NA, NA, NA, "Thiếu video và khung gán nhãn"] for label in labels.values()]
+        res = [[label, NA, NA, NA, NA, "Thiếu video và khung gán nhãn"] for label in labels.values()]
+        res.append(["A+ (baseline tối ưu)", NA, NA, NA, NA,
+                    "Tối ưu hóa Canny, ROI, và chống nhảy khung hình cho mưa và đêm"])
+        return res
     config = load_config(ROOT / "configs/F.yaml")
     result = []
     for condition, display in labels.items():
@@ -122,7 +151,89 @@ def _dashcam_rows(label_path: str | None) -> list[list[object]]:
         if fps is None:
             notes.append("Thiếu video mở được hoặc số lần lặp N trong YAML")
         result.append([display, len(rows), _rate(baseline), _rate(proposed), _value(fps), "; ".join(notes)])
+    result.append(["A+ (baseline tối ưu)", NA, NA, NA, NA,
+                   "Tối ưu hóa Canny, ROI, và chống nhảy khung hình cho mưa và đêm"])
     return result
+
+
+def _compute_jitter_table() -> list[list[object]]:
+    """Compute frame-to-frame jitter (std of delta x at bottom) and count of jumps > 80px (SPEC 3.6)."""
+    import cv2
+    import numpy as np
+    from src.pipeline import LanePipeline
+
+    cfg_a_path = ROOT / "configs/A.yaml"
+    cfg_opt_path = ROOT / "configs/A_opt.yaml"
+    if not cfg_a_path.is_file() or not cfg_opt_path.is_file():
+        return [["Ban ngày", NA, NA, NA, NA, "Thiếu tệp cấu hình"],
+                ["Ban đêm", NA, NA, NA, NA, "Thiếu tệp cấu hình"],
+                ["Trời mưa", NA, NA, NA, NA, "Thiếu tệp cấu hình"]]
+
+    cfg_a = load_config(cfg_a_path)
+    cfg_opt = load_config(cfg_opt_path)
+
+    vids = {
+        "Trời mưa": (ROOT / "test_video/YTSave.to_YouTube_Media_2CIxM7x-Clc_Lane-detect-test-data_001_720p.mp4", "rain"),
+        "Ban đêm": (ROOT / "test_video/YTSave.to_YouTube_Media_MefjPQfHBJA_Tesla-Full-Self-Driving-prevents-night-time-deer-strike-front-camera-FSD-fullsel_003_1080p.mp4", "night"),
+        "Ban ngày": (ROOT / "test_video/YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4", "day"),
+    }
+
+    jump_px = float(cfg_opt.get("preprocess", {}).get("jump_px", 80))
+    table_rows = []
+
+    for display, (vpath, src) in vids.items():
+        if not vpath.is_file():
+            table_rows.append([display, NA, NA, NA, NA, "Thiếu video kiểm thử"])
+            continue
+        cap = cv2.VideoCapture(str(vpath))
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        pipe_a = LanePipeline(cfg_a, src)
+        pipe_opt = LanePipeline(cfg_opt, src)
+        xs_a, xs_opt = [], []
+        for _ in range(50):
+            ret, frame = cap.read()
+            if not ret:
+                break
+            ra = pipe_a.process(frame.copy(), method="baseline")
+            ro = pipe_opt.process(frame.copy(), method="baseline")
+            xa = np.polyval(ra["left"], 1.0) * (w - 1) if ra.get("left") is not None else None
+            xo = np.polyval(ro["left"], 1.0) * (w - 1) if ro.get("left") is not None else None
+            xs_a.append(xa)
+            xs_opt.append(xo)
+        cap.release()
+
+        def stats(xs):
+            deltas = [abs(xs[i] - xs[i-1]) for i in range(1, len(xs)) if xs[i] is not None and xs[i-1] is not None]
+            if not deltas:
+                return (NA, 0, 0)
+            return (round(float(np.std(deltas)), 2), sum(1 for d in deltas if d > jump_px), len(deltas))
+
+        sa, ja, na = stats(xs_a)
+        so, jo, no = stats(xs_opt)
+        if isinstance(sa, (int, float)) and isinstance(so, (int, float)):
+            conclusion = f"jitter(A_opt) < jitter(A)" if so < sa else "jitter(A_opt) >= jitter(A)"
+        else:
+            conclusion = NA
+        table_rows.append([display, sa, ja, so, jo, conclusion])
+
+    return table_rows
+
+
+def _print_table(headers: list[str], rows: list[list[object]]) -> None:
+    """Format and print Markdown table to stdout."""
+    col_w = [len(str(h)) for h in headers]
+    str_rows = []
+    for r in rows:
+        sr = [str(c) for c in r]
+        str_rows.append(sr)
+        for i, val in enumerate(sr):
+            col_w[i] = max(col_w[i], len(val))
+    header_str = " | ".join(h.ljust(col_w[i]) for i, h in enumerate(headers))
+    sep_str = "-+-".join("-" * col_w[i] for i in range(len(headers)))
+    print(header_str)
+    print(sep_str)
+    for sr in str_rows:
+        print(" | ".join(val.ljust(col_w[i]) for i, val in enumerate(sr)))
 
 
 def _warning_rows(label_path: str | None, config: dict | None = None) -> list[list[object]]:
@@ -170,9 +281,12 @@ def _value(value):
 
 
 def _label(name: str) -> str:
-    return {"A": "Canny + ROI + Hough", "B": "HLS + ROI + Hough",
+    return {"A": "Canny + ROI + Hough",
+            "A+": "baseline tối ưu",
+            "B": "HLS + ROI + Hough",
             "C": "HLS + BEV + cửa sổ trượt + đa thức",
-            "D": "C + tìm quanh đa thức trước", "E": "D + Kalman",
+            "D": "C + tìm quanh đa thức trước",
+            "E": "D + Kalman",
             "F": "E + tăng cường ảnh"}[name]
 
 
