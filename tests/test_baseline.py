@@ -41,5 +41,6 @@ def test_hough_baseline_uses_kmeans_clusters_for_left_and_right(monkeypatch):
     assert set(result["cluster_labels"]) == {"left", "right"}
     assert len(result["cluster_labels"]["left"]) == 2
     assert len(result["cluster_labels"]["right"]) == 2
-    assert result["line_ranges"]["left"] is not None
-    assert result["line_ranges"]["right"] is not None
+    for bounds in result["line_ranges"].values():
+        assert bounds is not None
+        assert bounds[1] == 1.0

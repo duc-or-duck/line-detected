@@ -170,7 +170,7 @@ class LanePipeline:
                     bounds = line_ranges.get(side)
                     if bounds is not None:
                         valid &= (y >= bounds[0]) & (y <= bounds[1])
-            if region is not None:
+            if region is not None and line_ranges is None:
                 in_bounds = (left_x < width) & (right_x >= 0)
                 valid &= in_bounds
                 valid_indices = np.flatnonzero(valid)
@@ -183,7 +183,7 @@ class LanePipeline:
                 if len(run) >= 2:
                     cv2.polylines(frame, [left_points[run]], False, (0, 255, 0), 3)
                     cv2.polylines(frame, [right_points[run]], False, (0, 255, 0), 3)
-        if region is not None:
+        if region is not None and line_ranges is None:
             frame[region == 0] = original[region == 0]
         if warning is None:
             color = (0, 165, 255)

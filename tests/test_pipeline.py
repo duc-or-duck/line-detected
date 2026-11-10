@@ -26,3 +26,13 @@ def test_proposed_pipeline_runs_with_unknown_geometry_unavailable():
     assert result["left"] is None and result["right"] is None
     assert result["offset_m"] is None
     assert result["warning"]["available"] is False
+
+
+def test_baseline_lane_overlay_reaches_vehicle_even_below_roi():
+    frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    roi = [[40, 0], [60, 0], [60, 60], [40, 60]]
+    ranges = {"left": (.2, 1.0), "right": (.2, 1.0)}
+    LanePipeline._draw(frame, np.array([0.0, 0.0, .25]),
+                       np.array([0.0, 0.0, .75]), False, roi, ranges)
+    assert tuple(frame[95, 25]) == (0, 255, 0)
+    assert tuple(frame[95, 74]) == (0, 255, 0)

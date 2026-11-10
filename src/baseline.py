@@ -93,8 +93,9 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
             # x_norm = B * y_norm + C
             fits[side] = np.array([0.0, slope_xy * height / width,
                                   intercept_xy / width], dtype=np.float64)
-            line_ranges[side] = (max(0.0, min(selected_y) / height),
-                                 min(1.0, max(selected_y) / height))
+            # Keep the observed upper extent, then project the boundary down to
+            # the image bottom so both lane edges reach the vehicle area.
+            line_ranges[side] = (max(0.0, min(selected_y) / height), 1.0)
     return {**fits, "edges": edges,
             "segments": [] if segments is None else segments[:, 0, :].tolist(),
             "cluster_labels": labels_by_side, "line_ranges": line_ranges}
