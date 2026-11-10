@@ -1,0 +1,242 @@
+seed: 42
+method: baseline
+
+data:
+  tusimple: data/tusimple
+  culane: dataset/culane
+  day: data/dashcam/day
+  night: data/dashcam/night
+  rain: data/dashcam/rain
+
+pipeline:
+  default_data_source: day
+  color_threshold: false
+  roi: true
+  perspective: false
+  sliding_windows: false
+  previous_fit_search: false
+  kalman: false
+  warning: true
+  hough: true
+
+# ---- A_opt: Optimized baseline (Bảng 4.5 winner per condition) ----
+# Enhancement selected by correct-frame rate on dev split (seed 42, first 25 labelled frames)
+# Night: CLAHE clip=3.0 -> 96%  vs none 60% (Bảng 4.5)
+# Rain:  CLAHE clip=3.0 -> 100% vs none 100% (rain robust, keeps CLAHE for edge quality)
+# Day:   CLAHE clip=2.0 -> marginal gain, included for consistency
+
+# Condition auto-detection (median gray < dark_threshold -> night, low contrast -> rain)
+condition_auto:
+  dark_threshold: 70       # median gray below this -> night mode
+  contrast_threshold: 45   # ROI std gray below this -> rain mode (if not night)
+
+# Camera offset for departure warning (pixels; 0 = perfectly centered)
+cam_offset_px: 0
+
+preprocess:
+  gaussian_kernel: [5, 5]
+  # Base (day) enhancement
+  clahe_clip_limit: 2.0
+  clahe_tile_grid: [8, 8]
+  auto_canny: true
+  canny_sigma: 0.33
+  canny_low: 50
+  canny_high: 150
+
+  # Per-source overrides (enhancement + Canny)
+  canny_by_source:
+    night:
+      clahe_clip_limit: 3.0   # CLAHE winner for night (Bảng 4.5)
+      canny_sigma: 0.40       # wider sigma for dimmer ROI median
+    rain:
+      clahe_clip_limit: 3.0   # CLAHE winner for rain (Bảng 4.5)
+      canny_sigma: 0.33
+
+  # Enhancement method per condition (gamma | log | histeq | clahe | none)
+  # Stored as documentation of Bảng 4.5 winner; actual logic in canny_edges()
+  enhancement_by_source:
+    day: clahe
+    night: clahe
+    rain: clahe
+
+  # ROI: trapezoidal fractions of reference size (top narrower, bottom full-width)
+  # reference size 1280x720; scaled to actual frame by pipeline.py
+  roi_reference_size: [1280, 720]
+  roi_reference_size_by_source:
+    culane: [1640, 590]
+
+  roi_polygon:
+    - [463, 300]
+    - [849, 300]
+    - [1157, 700]
+    - [180, 700]
+
+  # Per-source ROI: top at road horizon (~0.58-0.62 H), bottom full width
+  roi_polygon_by_source:
+    culane:
+      - [500, 320]
+      - [1100, 320]
+      - [1620, 589]
+      - [20, 589]
+    day:
+      # top ~0.53H; wide bottom to include both markings
+      - [380, 380]
+      - [820, 380]
+      - [1220, 719]
+      - [40, 719]
+    night:
+      # top ~0.60H; wider than A to avoid sky/pole; shorter to cut pole edges at top
+      - [380, 432]
+      - [820, 432]
+      - [1200, 719]
+      - [60, 719]
+    rain:
+      # moderate top; wide bottom for reflections
+      - [360, 420]
+      - [820, 420]
+      - [1200, 600]
+      - [60, 600]
+
+  # Hough parameters (tuned on dev split; best from Hình 4.1 sweep)
+  hough:
+    threshold: 25
+    min_line_length: 50
+    max_line_gap: 80
+  hough_by_source:
+    night:
+      threshold: 14
+      min_line_length: 20
+      max_line_gap: 80
+    rain:
+      threshold: 10
+      min_line_length: 12
+      max_line_gap: 100
+    culane:
+      threshold: 20
+      min_line_length: 25
+      max_line_gap: 40
+
+  # Slope filter (SPEC 3.4 segment filter)
+  min_abs_slope: 0.15        # allow shallow highway lines
+  max_abs_slope: 2.5         # reject near-vertical poles/signs
+  min_abs_slope_by_source:
+    day: 0.15
+    night: 0.15
+    rain: 0.15
+    culane: 0.15
+  max_abs_slope_by_source:
+    day: 2.5
+    night: 2.0               # tighter at night to reject glare streaks
+    rain: 2.5
+    culane: 2.5
+
+  # Vanishing-point geometry check
+  vanishing_point_tolerance_by_source:
+    day: 0.40
+    night: 0.25
+    rain: 0.22
+    culane: 0.20
+
+  # Converging pair fallback (enabled for rain to handle dashed/partial lines)
+  converging_hough_pair_by_source:
+    night: false
+    rain: true
+    culane: false
+
+  # Anti-jump / temporal smoothing (A_opt new parameters)
+  smoothing_k: 5             # median over last K accepted (slope, intercept) pairs
+  hold_max_frames: 8         # hold last accepted lines when new frame rejected
+  jump_px: 80                # reject new bottom-x if differs by > this from smoothed
+  validity_width_min_frac: 0.20   # minimum lane width at bottom as fraction of frame width
+  validity_width_max_frac: 0.90   # maximum lane width at bottom as fraction of frame width
+
+  # HLS (unused in baseline but kept for consistency with A.yaml)
+  yellow_h_range: [15, 35]
+  yellow_s_min: 100
+  white_l_min: 200
+  sobel_x_kernel: 3
+  sobel_x_threshold: null
+  dash_close_kernel: [1, 15]
+
+homography:
+  culane:
+    source: null
+    destination: null
+  tusimple:
+    source: [[598, 300], [747, 300], [1247, 630], [301, 630]]
+    destination: [[320, 0], [960, 0], [960, 719], [320, 719]]
+  day:
+    source: null
+    destination: null
+  night:
+    source: null
+    destination: null
+  rain:
+    source: null
+    destination: null
+
+fit:
+  window_count: null
+  window_margin: null
+  recenter_min_pixels: null
+  min_fit_points: null
+  search_margin: null
+  min_lane_width_norm: null
+  max_lane_width_norm: null
+  expected_lane_width_px: null
+  lane_width_min_px: null
+  lane_width_max_px: null
+  parallel_tolerance: null
+  max_abs_quadratic: null
+  valid_y_top_norm: null
+  valid_y_bottom_norm: null
+  fit_y_margin_norm: null
+fit_by_source:
+  tusimple:
+    expected_lane_width_px: 640
+
+kalman:
+  dt: null
+  process_noise: null
+  measurement_noise: null
+  initial_covariance: null
+  gating_threshold: 11.34
+
+# Lane departure warning (SPEC 3.6 + adapter for straight lines)
+departure:
+  lane_width_m: 3.7
+  on_offset_m: 0.40          # warn if |d| > 0.40 m for N frames
+  off_offset_m: 0.25         # cancel warning if |d| drops below 0.25 m
+  danger_offset_m: 0.65      # danger state if |d| >= 0.65 m
+  tlc_threshold_s: 2.5       # warn immediately if TLC < 2.5 s
+  consecutive_frames: 5      # N frames before warning triggers
+  offset_only_threshold_m: 0.40  # simple threshold for false-alarm comparison
+
+evaluation:
+  tune_samples: null
+  seed: 42
+  fps_runs: null
+  pixel_threshold_px: 30
+  lane_accuracy_threshold: 0.5
+
+dataset_metadata:
+  tusimple_train_samples: null
+  tusimple_test_samples: null
+  dashcam_source_kind: null
+  dashcam_source_or_license: null
+  dashcam_video_count: null
+  dashcam_resolution: null
+  dashcam_fps: 30
+  dashcam_device: null
+  dashcam_labeled_frames_per_condition: null
+  culane_optional: false
+  culane_sample_count: null
+
+course_lessons:
+  canny_roi: null
+  hough: null
+  hls_enhancement: null
+  homography: null
+  sliding_fit: null
+  kalman: null
+

@@ -22,7 +22,17 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
                                minLineLength=int(params["min_line_length"]),
                                maxLineGap=int(params["max_line_gap"]))
     height, width = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     polygon = config.get("roi_polygon")
+    road_median = 0.0
+    if np.max(image) > 0:
+        if polygon:
+            roi_mask_img = np.zeros(image.shape[:2], dtype=np.uint8)
+            cv2.fillPoly(roi_mask_img, [np.asarray(polygon, dtype=np.int32)], 255)
+            roi_vals = gray[roi_mask_img > 0]
+            road_median = float(np.median(roi_vals)) if roi_vals.size else float(np.median(gray))
+        else:
+            road_median = float(np.median(gray))
     if polygon:
         roi_y = np.asarray(polygon, dtype=np.float64)[:, 1]
         roi_top = int(np.clip(np.min(roi_y), 0, height - 1))
@@ -44,6 +54,8 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
         if min_abs_slope is not None and abs(slope) < float(min_abs_slope):
             continue
         if max_abs_slope is not None and abs(slope) > float(max_abs_slope):
+            continue
+        if not _is_valid_lane_segment(x1, y1, x2, y2, gray, image, road_median, width, height):
             continue
         intercept = y1 - slope * x1
         midpoint_x = (x1 + x2) / 2.0
@@ -71,19 +83,23 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
             slope, intercept = item["slope"], item["intercept"]
             fits[side] = _normalized_line_fit(slope, intercept, height, width)
             line_ranges[side] = (roi_top / (height - 1), roi_bottom / (height - 1))
-    elif not use_converging_pair:
+    else:
         for side, side_candidates in candidates.items():
             if not side_candidates:
                 continue
-            slopes = np.asarray([item[0] for item in side_candidates], dtype=np.float64)
-            intercepts = np.asarray([item[1] for item in side_candidates], dtype=np.float64)
-            weights = np.asarray([item[2] for item in side_candidates], dtype=np.float64)
+            clustered = _filter_candidates_by_ego_cluster(
+                side_candidates, side, width, roi_bottom)
+            inliers = _filter_slope_outliers(clustered)
+            slopes = np.asarray([item[0] for item in inliers], dtype=np.float64)
+            intercepts = np.asarray([item[1] for item in inliers], dtype=np.float64)
+            weights = np.asarray([item[2] for item in inliers], dtype=np.float64)
             slope = float(np.average(slopes, weights=weights))
             intercept = float(np.average(intercepts, weights=weights))
             if abs(slope) < 1e-9:
                 continue
             fits[side] = _normalized_line_fit(slope, intercept, height, width)
             line_ranges[side] = (roi_top / (height - 1), roi_bottom / (height - 1))
+    valid_pair = False
     if fits["left"] is not None and fits["right"] is not None:
         top_norm, bottom_norm = roi_top / (height - 1), roi_bottom / (height - 1)
         top_gap = float(np.polyval(fits["right"], top_norm) - np.polyval(fits["left"], top_norm))
@@ -99,12 +115,165 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
                 top_norm = min(crossing_y + 1.0 / (height - 1), bottom_norm)
                 line_ranges = {side: (top_norm, bottom_norm) for side in line_ranges}
                 top_gap = float(np.polyval(fits["right"], top_norm) - np.polyval(fits["left"], top_norm))
-        if top_gap <= 0 or bottom_gap <= 0:
+        if top_gap > 0 and bottom_gap > 0:
+            valid_pair = True
+    if not valid_pair:
+        fallback_selected = _select_converging_pair(candidate_lines, width)
+        if fallback_selected is not None:
+            for side, item in zip(("left", "right"), fallback_selected):
+                slope, intercept = item["slope"], item["intercept"]
+                fits[side] = _normalized_line_fit(slope, intercept, height, width)
+                line_ranges[side] = (roi_top / (height - 1), roi_bottom / (height - 1))
+        else:
             fits = {"left": None, "right": None}
             line_ranges = {"left": None, "right": None}
     return {**fits, "edges": edges,
             "segments": [] if segments is None else segments[:, 0, :].tolist(),
             "line_ranges": line_ranges}
+
+
+def _is_valid_lane_segment(x1: int, y1: int, x2: int, y2: int, gray: np.ndarray,
+                           image: np.ndarray, road_median: float,
+                           width: int, height: int) -> bool:
+    """Filter out dark oil stains, tar cracks/seams, water ruts, and red taillight reflections."""
+    if road_median <= 5.0:
+        return True
+    dx, dy = x2 - x1, y2 - y1
+    length = float(np.hypot(dx, dy))
+    if length < 1e-3:
+        return False
+    nx, ny = -dy / length, dx / length
+
+    # Reject specular puddle reflection of red taillights on wet asphalt at night
+    if image.ndim == 3 and image.shape[2] == 3:
+        pts_x = np.linspace(x1, x2, 6).astype(int)
+        pts_y = np.linspace(y1, y2, 6).astype(int)
+        mr = float(np.mean(image[pts_y, pts_x, 2]))
+        mg = float(np.mean(image[pts_y, pts_x, 1]))
+        mb = float(np.mean(image[pts_y, pts_x, 0]))
+        if mr > 70 and mr > 1.4 * mg and mr > 1.5 * mb:
+            return False
+
+    # Sample perpendicular cross-section at multiple points along the segment
+    scale = max(1.0, width / 1280.0)
+    offsets = np.asarray([-12, -8, -4, -2, 0, 2, 4, 8, 12], dtype=np.float64) * scale
+
+    max_contrasts = []
+    min_contrasts = []
+    trough_count = 0
+
+    for alpha in (0.25, 0.50, 0.75):
+        mx = x1 + alpha * dx
+        my = y1 + alpha * dy
+        prof = []
+        for off in offsets:
+            px = int(np.clip(round(mx + off * nx), 0, width - 1))
+            py = int(np.clip(round(my + off * ny), 0, height - 1))
+            prof.append(float(gray[py, px]))
+        p_max = max(prof)
+        p_min = min(prof)
+        p_mid = prof[4]
+        p_left = min(prof[:3])
+        p_right = min(prof[6:])
+        max_contrasts.append(p_max - road_median)
+        min_contrasts.append(road_median - p_min)
+        if p_mid < p_left - 6 and p_mid < p_right - 6:
+            trough_count += 1
+
+    # Reject dark trough in cross-section (oil leak / water trench where center is darker than flanks)
+    if trough_count >= 2:
+        return False
+
+    median_max_c = float(np.median(max_contrasts))
+    median_min_c = float(np.median(min_contrasts))
+
+    # Adaptive minimum brightness contrast required for a painted marking
+    if road_median > 80.0:
+        min_bright_margin = 10.0
+    elif road_median > 40.0:
+        min_bright_margin = 7.0
+    else:
+        min_bright_margin = 4.0
+
+    # 1. Reject if no part of the cross section is brighter than the road asphalt
+    if median_max_c < min_bright_margin:
+        return False
+
+    # 2. Reject dark cracks / tar expansion joints / oil streaks:
+    # A dark crack dips significantly below asphalt (median_min_c > 20)
+    # but lacks strong bright paint contrast (median_max_c < 18).
+    if median_min_c > 20.0 and median_max_c < 18.0:
+        return False
+
+    # 3. Reject if the depression into dark is much stronger than bright contrast
+    if median_min_c > 25.0 and median_min_c > 2.5 * max(median_max_c, 1.0):
+        return False
+
+    return True
+
+
+def _filter_candidates_by_ego_cluster(candidates: list[tuple[float, float, float]],
+                                     side: str, width: int, roi_bottom: int,
+                                     vehicle_x: float | None = None) -> list[tuple[float, float, float]]:
+    """Select the spatial cluster of candidate segments corresponding to the ego lane."""
+    if len(candidates) <= 2:
+        return candidates
+    if vehicle_x is None:
+        vehicle_x = width / 2.0
+    tol = max(20.0, 0.08 * width)
+    items = []
+    for c in candidates:
+        sl, ic, _ = c
+        xb = (roi_bottom - ic) / sl
+        items.append((c, xb))
+    items.sort(key=lambda it: it[1])
+    clusters = []
+    curr = [items[0]]
+    for it in items[1:]:
+        if abs(it[1] - curr[-1][1]) <= tol:
+            curr.append(it)
+        else:
+            clusters.append(curr)
+            curr = [it]
+    clusters.append(curr)
+    c_stats = []
+    for c in clusters:
+        supp = sum(it[0][2] for it in c)
+        avg_xb = float(np.average([it[1] for it in c], weights=[it[0][2] for it in c]))
+        c_stats.append({"cluster": [it[0] for it in c], "support": supp, "xb": avg_xb})
+    if side == "left":
+        valid = [cs for cs in c_stats if cs["xb"] < vehicle_x]
+        if valid:
+            max_s = max(cs["support"] for cs in valid)
+            good = [cs for cs in valid if cs["support"] >= 0.25 * max_s]
+            ego_zone = [cs for cs in good if cs["xb"] <= 0.42 * width]
+            target_pool = ego_zone if ego_zone else good
+            best = max(target_pool, key=lambda cs: cs["xb"])
+            return best["cluster"]
+    else:
+        valid = [cs for cs in c_stats if cs["xb"] > vehicle_x]
+        if valid:
+            max_s = max(cs["support"] for cs in valid)
+            good = [cs for cs in valid if cs["support"] >= 0.25 * max_s]
+            ego_zone = [cs for cs in good if cs["xb"] >= 0.58 * width]
+            target_pool = ego_zone if ego_zone else good
+            best = min(target_pool, key=lambda cs: cs["xb"])
+            return best["cluster"]
+    return candidates
+
+
+def _filter_slope_outliers(candidates: list[tuple[float, float, float]],
+                           max_deviation: float = 0.25) -> list[tuple[float, float, float]]:
+    """Reject candidate segments whose slope deviates from the weighted median."""
+    if len(candidates) <= 2:
+        return candidates
+    slopes = np.asarray([item[0] for item in candidates], dtype=np.float64)
+    weights = np.asarray([item[2] for item in candidates], dtype=np.float64)
+    order = np.argsort(slopes)
+    cumsum = np.cumsum(weights[order])
+    pivot = slopes[order[np.searchsorted(cumsum, cumsum[-1] * 0.5)]]
+    inliers = [c for c in candidates if abs(c[0] - pivot) <= max_deviation]
+    return inliers if inliers else candidates
 
 
 def _normalized_line_fit(slope: float, intercept: float, height: int,

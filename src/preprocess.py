@@ -18,14 +18,44 @@ def lane_mask(image: np.ndarray, params: dict) -> np.ndarray:
     return cv2.bitwise_or(yellow, white_mask)
 
 
+def enhance_gray(gray: np.ndarray, method: str, clip_limit: float = 2.0,
+                 tile_grid: tuple[int, int] = (8, 8), gamma: float = 1.5) -> np.ndarray:
+    """Apply one of SPEC-permitted illumination enhancement methods to a grayscale image.
+
+    Methods: 'clahe' | 'gamma' | 'log' | 'histeq' | 'none'.
+    CLAHE is applied with *clip_limit* and *tile_grid* (Section 4.6 / Bảng 4.5).
+    Gamma correction raises the image to power 1/gamma (brightens when gamma > 1).
+    """
+    if method == "clahe" and clip_limit > 0:
+        return cv2.createCLAHE(float(clip_limit), tile_grid).apply(gray)
+    if method == "gamma":
+        inv = 1.0 / max(float(gamma), 1e-3)
+        lut = np.clip(np.power(np.arange(256, dtype=np.float32) / 255.0, inv) * 255.0,
+                      0, 255).astype(np.uint8)
+        return lut[gray]
+    if method == "log":
+        lut = np.clip(255.0 * np.log1p(np.arange(256, dtype=np.float32)) / np.log1p(255.0),
+                      0, 255).astype(np.uint8)
+        return lut[gray]
+    if method == "histeq":
+        return cv2.equalizeHist(gray)
+    return gray  # 'none'
+
+
 def canny_edges(image: np.ndarray, params: dict) -> np.ndarray:
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image.copy()
     settings = dict(params)
     settings.update(params.get("canny_by_source", {}).get(params.get("data_source"), {}))
+
+    # Illumination enhancement (SPEC 3.4.2 / Bảng 4.5)
+    enh_method = settings.get("enhancement_method", "clahe")
     clip_limit = settings.get("clahe_clip_limit")
+    tile = tuple(map(int, settings.get("clahe_tile_grid", [8, 8])))
+    # Legacy behaviour: if clahe_clip_limit is set directly (A.yaml style), apply CLAHE
     if clip_limit is not None and float(clip_limit) > 0:
-        tile = tuple(map(int, settings.get("clahe_tile_grid", [8, 8])))
-        gray = cv2.createCLAHE(float(clip_limit), tile).apply(gray)
+        gray = enhance_gray(gray, enh_method if enh_method else "clahe",
+                            float(clip_limit), tile)
+
     blurred = cv2.GaussianBlur(gray, tuple(settings.get("gaussian_kernel", [5, 5])), 0)
     if settings.get("auto_canny", False):
         region = settings.get("roi_polygon")
@@ -40,6 +70,9 @@ def canny_edges(image: np.ndarray, params: dict) -> np.ndarray:
             sigma = float(settings.get("canny_sigma", .33))
             low = max(0, int((1.0 - sigma) * median))
             high = min(255, int((1.0 + sigma) * median))
+            if high <= low:
+                low = max(0, int(median * 0.5))
+                high = min(255, max(low + 10, int(median * 1.5)))
             if high > low:
                 return cv2.Canny(blurred, low, high)
     return cv2.Canny(blurred, int(settings.get("canny_low", 50)),
