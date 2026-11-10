@@ -39,13 +39,16 @@ preprocess:
   - 35
   yellow_s_min: 100
   white_l_min: 200
+  sobel_x_kernel: 3
+  sobel_x_threshold: null
+  dash_close_kernel: [1, 15]
 homography:
   culane:
     source: null
     destination: null
   tusimple:
-    source: null
-    destination: null
+    source: [[598, 300], [747, 300], [1247, 630], [301, 630]]
+    destination: [[320, 0], [960, 0], [960, 719], [320, 719]]
   day:
     source: null
     destination: null
@@ -63,7 +66,17 @@ fit:
   search_margin: null
   min_lane_width_norm: null
   max_lane_width_norm: null
+  expected_lane_width_px: null
+  lane_width_min_px: null
+  lane_width_max_px: null
+  parallel_tolerance: null
+  max_abs_quadratic: null
+  valid_y_top_norm: null
+  valid_y_bottom_norm: null
+  fit_y_margin_norm: null
 fit_by_source:
+  tusimple:
+    expected_lane_width_px: 640
   day:
     window_count: 12
     window_margin: 60
