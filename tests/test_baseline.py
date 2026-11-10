@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from src.baseline import detect_baseline
+from src.baseline import _select_converging_pair, detect_baseline
 from src.preprocess import canny_edges
 
 
@@ -42,6 +42,24 @@ def test_baseline_uses_source_slope_threshold_for_gently_sloped_lanes(monkeypatc
     result = detect_baseline(np.zeros((100, 100, 3), dtype=np.uint8), config)
 
     assert result["left"] is not None and result["right"] is not None
+
+
+def test_converging_hough_pair_brackets_vehicle_and_prefers_near_lane():
+    lines = [
+        {"side": "left", "x_top": 557.0, "x_bottom": 457.0, "length": 126,
+         "slope": -1.19, "intercept": 0.0},
+        {"side": "left", "x_top": 427.0, "x_bottom": 278.0, "length": 250,
+         "slope": -.42, "intercept": 0.0},
+        {"side": "right", "x_top": 615.0, "x_bottom": 690.0, "length": 51,
+         "slope": 1.59, "intercept": 0.0},
+        {"side": "right", "x_top": 726.0, "x_bottom": 822.0, "length": 149,
+         "slope": 1.23, "intercept": 0.0},
+    ]
+
+    left, right = _select_converging_pair(lines, 1298)
+
+    assert left["x_bottom"] == 457.0
+    assert right["x_bottom"] == 690.0
 
 
 def test_baseline_clips_small_vanishing_point_crossing(monkeypatch):

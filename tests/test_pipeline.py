@@ -54,3 +54,22 @@ def test_lane_overlay_stops_at_configured_roi_bottom():
     assert tuple(frame[55, 25]) == (0, 255, 0)
     assert tuple(frame[55, 74]) == (0, 255, 0)
     assert tuple(frame[95, 25]) == (0, 0, 0)
+
+
+def test_baseline_offset_is_measured_at_roi_bottom(monkeypatch):
+    import src.pipeline as pipeline_module
+
+    fit_left = np.array([0.0, .2, .1])
+    fit_right = np.array([0.0, .2, .5])
+    monkeypatch.setattr(pipeline_module, "detect_baseline", lambda frame, config: {
+        "left": fit_left, "right": fit_right, "edges": np.zeros(frame.shape[:2], np.uint8),
+        "segments": [], "line_ranges": {"left": (0.0, .6), "right": (0.0, .6)},
+    })
+    config = load_config("configs/A.yaml")
+    config["preprocess"]["roi_polygon"] = [[0, 0], [99, 0], [99, 60], [0, 60]]
+    config["preprocess"]["roi_polygon_by_source"] = {}
+    config["preprocess"]["roi_reference_size"] = None
+
+    result = LanePipeline(config, "day").process(np.zeros((100, 100, 3), dtype=np.uint8), "baseline")
+
+    assert np.isclose(result["offset_px"], 8.42)

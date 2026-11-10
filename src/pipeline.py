@@ -226,7 +226,13 @@ class LanePipeline:
         vehicle_x = vehicle_x_in_bev(width, height, matrix)
         offset = calculate_offset(offset_left, offset_right, width,
                                   float(lane_width_m) if lane_width_m is not None else None,
-                                  vehicle_x_px=vehicle_x, meters_per_pixel=meter_scale_override,
+                                  vehicle_x_px=vehicle_x,
+                                  y_eval=(min(bounds[1] for bounds in line_ranges.values()
+                                              if bounds is not None)
+                                          if method == "baseline" and line_ranges and
+                                          any(bounds is not None for bounds in line_ranges.values())
+                                          else 1.0),
+                                  meters_per_pixel=meter_scale_override,
                                   reuse_scale=single_line)
         if lane_measurement_available and not single_line:
             self.last_meters_per_pixel = offset.get("meters_per_pixel")
@@ -267,7 +273,7 @@ class LanePipeline:
         self._draw(output, left, right, warning.get("warning"), roi_polygon, line_ranges,
                    draw_lane_center, draw_vehicle_center,
                    offset.get("offset_px") if lane_measurement_available else None,
-                   display_state, clip_roi=(method == "proposed"), marker_y=marker_y)
+                   display_state, clip_roi=True, marker_y=marker_y)
         departure_record = {"frame": self.frame_index, "d_m": offset.get("offset_m"),
                             "TLC": warning.get("tlc_s"),
                             "warning": warning.get("warning") if warning.get("available") else None,

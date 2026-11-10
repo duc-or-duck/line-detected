@@ -30,6 +30,7 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
     else:
         roi_top, roi_bottom = 0, height - 1
     candidates = {"left": [], "right": []}
+    candidate_lines = []
     min_abs_slope = config.get("min_abs_slope_by_source", {}).get(
         config.get("data_source"), config.get("min_abs_slope"))
     max_abs_slope = config.get("max_abs_slope_by_source", {}).get(
@@ -54,26 +55,35 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
         if side is not None:
             length = float(np.hypot(x2 - x1, y2 - y1))
             candidates[side].append((slope, intercept, length))
+            candidate_lines.append({
+                "side": side, "slope": slope, "intercept": intercept, "length": length,
+                "x_top": (roi_top - intercept) / slope,
+                "x_bottom": (roi_bottom - intercept) / slope,
+            })
     fits = {"left": None, "right": None}
     line_ranges = {"left": None, "right": None}
-    for side, side_candidates in candidates.items():
-        if not side_candidates:
-            continue
-        slopes = np.asarray([item[0] for item in side_candidates], dtype=np.float64)
-        intercepts = np.asarray([item[1] for item in side_candidates], dtype=np.float64)
-        weights = np.asarray([item[2] for item in side_candidates], dtype=np.float64)
-        slope = float(np.average(slopes, weights=weights))
-        intercept = float(np.average(intercepts, weights=weights))
-        if abs(slope) < 1e-9:
-            continue
-        x_top = (roi_top - intercept) / slope
-        x_bottom = (roi_bottom - intercept) / slope
-        # y = slope*x + intercept, converted to normalized x(y).
-        slope_xy = 1.0 / slope
-        intercept_xy = -intercept / slope
-        fits[side] = np.asarray([0.0, slope_xy * (height - 1) / (width - 1),
-                                 intercept_xy / (width - 1)], dtype=np.float64)
-        line_ranges[side] = (roi_top / (height - 1), roi_bottom / (height - 1))
+    use_converging_pair = config.get("converging_hough_pair_by_source", {}).get(
+        config.get("data_source"), False)
+    selected = (_select_converging_pair(candidate_lines, width)
+                if use_converging_pair else None)
+    if use_converging_pair and selected is not None:
+        for side, item in zip(("left", "right"), selected):
+            slope, intercept = item["slope"], item["intercept"]
+            fits[side] = _normalized_line_fit(slope, intercept, height, width)
+            line_ranges[side] = (roi_top / (height - 1), roi_bottom / (height - 1))
+    elif not use_converging_pair:
+        for side, side_candidates in candidates.items():
+            if not side_candidates:
+                continue
+            slopes = np.asarray([item[0] for item in side_candidates], dtype=np.float64)
+            intercepts = np.asarray([item[1] for item in side_candidates], dtype=np.float64)
+            weights = np.asarray([item[2] for item in side_candidates], dtype=np.float64)
+            slope = float(np.average(slopes, weights=weights))
+            intercept = float(np.average(intercepts, weights=weights))
+            if abs(slope) < 1e-9:
+                continue
+            fits[side] = _normalized_line_fit(slope, intercept, height, width)
+            line_ranges[side] = (roi_top / (height - 1), roi_bottom / (height - 1))
     if fits["left"] is not None and fits["right"] is not None:
         top_norm, bottom_norm = roi_top / (height - 1), roi_bottom / (height - 1)
         top_gap = float(np.polyval(fits["right"], top_norm) - np.polyval(fits["left"], top_norm))
@@ -95,6 +105,37 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
     return {**fits, "edges": edges,
             "segments": [] if segments is None else segments[:, 0, :].tolist(),
             "line_ranges": line_ranges}
+
+
+def _normalized_line_fit(slope: float, intercept: float, height: int,
+                         width: int) -> np.ndarray:
+    """Convert y = slope*x + intercept to normalized x(y)."""
+    slope_xy = 1.0 / slope
+    intercept_xy = -intercept / slope
+    return np.asarray([0.0, slope_xy * (height - 1) / (width - 1),
+                       intercept_xy / (width - 1)], dtype=np.float64)
+
+
+def _select_converging_pair(lines: list[dict], width: int) -> tuple[dict, dict] | None:
+    """Choose supported Hough lines that converge ahead and bracket the vehicle."""
+    vehicle_x = width / 2.0
+    pairs = []
+    for left in (line for line in lines if line["side"] == "left"):
+        if not 0 <= left["x_top"] < width or not 0 <= left["x_bottom"] < vehicle_x:
+            continue
+        for right in (line for line in lines if line["side"] == "right"):
+            if not vehicle_x < right["x_bottom"] < width or not 0 <= right["x_top"] < width:
+                continue
+            top_gap = right["x_top"] - left["x_top"]
+            bottom_gap = right["x_bottom"] - left["x_bottom"]
+            if top_gap <= 0 or bottom_gap <= top_gap:
+                continue
+            support = left["length"] + right["length"]
+            pairs.append((bottom_gap, top_gap / max(support, 1e-9), -support, left, right))
+    if not pairs:
+        return None
+    _, _, _, left, right = min(pairs, key=lambda pair: pair[:3])
+    return left, right
 
 
 def _roi_center_at_y(polygon: list[list[int]] | None, y: float, width: int) -> float:

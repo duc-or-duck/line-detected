@@ -36,10 +36,10 @@ preprocess:
     - [1200, 719]
     - [80, 719]
     night:
-    - [535, 465]
-    - [665, 465]
-    - [830, 720]
-    - [190, 720]
+    - [450, 430]
+    - [850, 430]
+    - [1100, 719]
+    - [100, 719]
     rain:
     - [517, 430]
     - [770, 430]
@@ -76,6 +76,8 @@ preprocess:
   min_abs_slope_by_source:
     night: 0.2
     rain: 0.1
+  converging_hough_pair_by_source:
+    rain: true
   max_abs_slope: 4.0
   yellow_h_range:
   - 15
