@@ -13,7 +13,7 @@ import yaml
 from .baseline import detect_baseline
 from .departure import DepartureWarning, calculate_offset
 from .kalman import LaneKalmanFilter
-from .lane_fit import sliding_window_fit, validate_and_recover_lanes
+from .lane_fit import fit_support_overlaps, sliding_window_fit, validate_and_recover_lanes
 from .preprocess import canny_edges, lane_mask, roi_mask
 from .warp import (unwarp_lane_fit, unwarp_y_range, vehicle_x_in_bev,
                    warp_image)
@@ -30,7 +30,7 @@ def load_config(path: str | Path) -> dict:
 class LanePipeline:
     def __init__(self, config: dict, data_source: str | None = None):
         self.config = copy.deepcopy(config)
-        self.data_source = data_source
+        self.data_source = data_source or self.config.get("pipeline", {}).get("default_data_source")
         self.previous_fits = None
         self.previous_baseline_fits = None
         self.previous_display_fits = None
@@ -123,6 +123,31 @@ class LanePipeline:
             valid_left, valid_right = validity["valid_left"], validity["valid_right"]
             single_line = validity["single_line"]
             lane_measurement_available = validity["valid"]
+            minimum_windows = fit_cfg.get("minimum_common_windows")
+            if (lane_measurement_available and not single_line and minimum_windows is not None and
+                    not fit_support_overlaps(fit_diagnostics, fit_cfg.get("window_count", 1),
+                                             minimum_windows)):
+                bev_left = bev_right = None
+                valid_left = valid_right = lane_measurement_available = False
+            if not lane_measurement_available and pipeline.get("hough", False):
+                hough_result = detect_baseline(frame, source_preprocess_cfg)
+                if hough_result["left"] is not None and hough_result["right"] is not None:
+                    hough_fit_cfg = fit_cfg
+                    if roi_polygon:
+                        roi_top_norm = min(point[1] for point in roi_polygon) / max(height - 1, 1)
+                        hough_fit_cfg = fit_cfg | {"valid_y_top_norm": roi_top_norm}
+                    bev_left, bev_right, validity = validate_and_recover_lanes(
+                        hough_result["left"], hough_result["right"], width, height, hough_fit_cfg)
+                    if validity["valid"]:
+                        valid_left = valid_right = lane_measurement_available = True
+                        single_line = False
+                        hough_ranges = hough_result.get("line_ranges", {})
+                        fit_diagnostics = {
+                            "y_min_left": (hough_ranges.get("left") or (None, None))[0],
+                            "y_max_left": (hough_ranges.get("left") or (None, None))[1],
+                            "y_min_right": (hough_ranges.get("right") or (None, None))[0],
+                            "y_max_right": (hough_ranges.get("right") or (None, None))[1],
+                        }
             if lane_measurement_available:
                 line_ranges = {}
                 for side, fit in (("left", bev_left), ("right", bev_right)):

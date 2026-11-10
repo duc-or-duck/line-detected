@@ -7,6 +7,7 @@ data:
   night: data/dashcam/night
   rain: data/dashcam/rain
 pipeline:
+  default_data_source: day
   color_threshold: true
   roi: true
   perspective: true
@@ -14,7 +15,7 @@ pipeline:
   previous_fit_search: true
   kalman: true
   warning: true
-  hough: false
+  hough: true
 preprocess:
   canny_low: 50
   canny_high: 150
@@ -25,15 +26,16 @@ preprocess:
   roi_polygon_by_source:
     culane: null
     day:
-    - [580, 450]
-    - [750, 450]
-    - [1200, 719]
-    - [300, 719]
+    - [590, 540]
+    - [710, 540]
+    - [1100, 719]
+    - [180, 719]
   hough:
-    threshold: null
-    min_line_length: null
-    max_line_gap: null
-  min_abs_slope: null
+    threshold: 30
+    min_line_length: 60
+    max_line_gap: 80
+  min_abs_slope: 0.4
+  max_abs_slope: 4.0
   yellow_h_range:
   - 15
   - 35
@@ -74,6 +76,7 @@ fit:
   valid_y_top_norm: null
   valid_y_bottom_norm: null
   fit_y_margin_norm: null
+  minimum_common_windows: 2
 fit_by_source:
   tusimple:
     expected_lane_width_px: 640

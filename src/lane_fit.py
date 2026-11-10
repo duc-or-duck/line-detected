@@ -153,6 +153,17 @@ def validate_and_recover_lanes(left: np.ndarray | None, right: np.ndarray | None
     return left, right, flags
 
 
+def fit_support_overlaps(diagnostics: dict, window_count: int,
+                         minimum_windows: float) -> bool:
+    """Require both fits to be supported over a shared vertical span."""
+    left_min, left_max = diagnostics.get("y_min_left"), diagnostics.get("y_max_left")
+    right_min, right_max = diagnostics.get("y_min_right"), diagnostics.get("y_max_right")
+    if any(value is None for value in (left_min, left_max, right_min, right_max)):
+        return False
+    shared_span = min(float(left_max), float(right_max)) - max(float(left_min), float(right_min))
+    return shared_span >= float(minimum_windows) / max(int(window_count), 1)
+
+
 def _fit(y: np.ndarray, x: np.ndarray, min_points: int) -> np.ndarray | None:
     if len(x) < max(3, min_points):
         return None

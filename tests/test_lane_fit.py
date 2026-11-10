@@ -1,6 +1,14 @@
 import numpy as np
 
-from src.lane_fit import sliding_window_fit, validate_and_recover_lanes
+from src.lane_fit import fit_support_overlaps, sliding_window_fit, validate_and_recover_lanes
+
+
+def test_fit_support_requires_shared_evidence_span():
+    diagnostics = {"y_min_left": .70, "y_max_left": .78,
+                   "y_min_right": .70, "y_max_right": 1.0}
+    assert not fit_support_overlaps(diagnostics, window_count=12, minimum_windows=2)
+    diagnostics["y_max_left"] = .90
+    assert fit_support_overlaps(diagnostics, window_count=12, minimum_windows=2)
 
 
 def test_sliding_windows_fit_normalized_quadratics():

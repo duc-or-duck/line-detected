@@ -11,6 +11,11 @@ def test_all_ablation_configs_load_and_keep_unknowns_null():
         assert set(config["homography"]) == {"tusimple", "culane", "day", "night", "rain"}
 
 
+def test_proposed_day_demo_uses_its_configured_roi_by_default():
+    pipeline = LanePipeline(load_config("configs/E.yaml"))
+    assert pipeline.data_source == "day"
+
+
 def test_baseline_runs_with_unknown_hough_values_without_guessing():
     config = load_config("configs/A.yaml")
     result = LanePipeline(config).process(np.zeros((80, 120, 3), dtype=np.uint8), "baseline")
