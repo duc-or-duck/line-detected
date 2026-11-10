@@ -136,11 +136,27 @@ class LanePipeline:
                     if roi_polygon:
                         roi_top_norm = min(point[1] for point in roi_polygon) / max(height - 1, 1)
                         hough_fit_cfg = fit_cfg | {"valid_y_top_norm": roi_top_norm}
-                    bev_left, bev_right, validity = validate_and_recover_lanes(
-                        hough_result["left"], hough_result["right"], width, height, hough_fit_cfg)
-                    if validity["valid"]:
-                        valid_left = valid_right = lane_measurement_available = True
-                        single_line = False
+                    seed_fits = (hough_result["left"], hough_result["right"])
+                    validity = {"valid": False}
+                    refine_margin = fit_cfg.get("refinement_search_margin")
+                    if refine_margin is None:
+                        refine_margin = fit_cfg.get("window_margin")
+                    if refine_margin is not None:
+                        refine_cfg = fit_cfg | {"search_margin": refine_margin}
+                        curved_left, curved_right, curved_diagnostics = sliding_window_fit(
+                            binary, refine_cfg, seed_fits)
+                        curved_left, curved_right, curved_validity = validate_and_recover_lanes(
+                            curved_left, curved_right, width, height, hough_fit_cfg)
+                        curved_validity["valid"] = (curved_validity["valid"] and
+                            fit_support_overlaps(curved_diagnostics, fit_cfg.get("window_count", 1),
+                                                 minimum_windows or 0))
+                        if curved_validity["valid"]:
+                            bev_left, bev_right = curved_left, curved_right
+                            fit_diagnostics = curved_diagnostics
+                            validity = curved_validity
+                    if not validity["valid"]:
+                        bev_left, bev_right, validity = validate_and_recover_lanes(
+                            seed_fits[0], seed_fits[1], width, height, hough_fit_cfg)
                         hough_ranges = hough_result.get("line_ranges", {})
                         fit_diagnostics = {
                             "y_min_left": (hough_ranges.get("left") or (None, None))[0],
@@ -148,6 +164,9 @@ class LanePipeline:
                             "y_min_right": (hough_ranges.get("right") or (None, None))[0],
                             "y_max_right": (hough_ranges.get("right") or (None, None))[1],
                         }
+                    if validity["valid"]:
+                        valid_left = valid_right = lane_measurement_available = True
+                        single_line = False
             if lane_measurement_available:
                 line_ranges = {}
                 for side, fit in (("left", bev_left), ("right", bev_right)):
@@ -161,6 +180,9 @@ class LanePipeline:
                         low, high = fit_diagnostics.get(f"y_min_{other}"), fit_diagnostics.get(f"y_max_{other}")
                     margin = fit_cfg.get("fit_y_margin_norm") or 0.0
                     bounds = None if low is None else (max(0.0, low - margin), min(1.0, high + margin))
+                    if matrix is None and roi_polygon and bounds is not None:
+                        roi_bottom_norm = max(point[1] for point in roi_polygon) / max(height - 1, 1)
+                        bounds = (bounds[0], max(bounds[1], roi_bottom_norm))
                     line_ranges[side] = unwarp_y_range(fit, bounds, matrix, height, width)
                 offset_left, offset_right = bev_left, bev_right
                 if not single_line:
