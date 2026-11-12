@@ -1,0 +1,12 @@
+fcf7ce2 feat(baseline): optimize baseline for night and rain conditions with anti-jump and oil streak rejection
+c5d9429 Select lane-consistent Hough pairs for rain scenes
+172a03d Tune baseline slope filters for night and rain
+91c9e83 Improve Hough baseline for night and rain
+5d6481a Fix crossing and dashed lane fits
+b7c1432 Extend lane overlays to vehicle area
+10d606b Improve dashed lane clustering
+3495d02 Cluster Hough lane lines with manual K-means
+5ae616f Restore baseline straight-line fit
+413b733 Fit curved lanes in Hough baseline
+bac4d34 Complete configurable lane pipeline
+c88a3e8 Add YAML-driven lane pipeline and ablation configs

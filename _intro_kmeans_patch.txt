@@ -1,0 +1,11 @@
+commit 3495d023fcb7cec785606fda4181fa47235feee1
+Author: duc-or-duck <phamminhduc954@gmail.com>
+Date:   Mon Nov 9 23:50:39 2026 +0700
+
+    Cluster Hough lane lines with manual K-means
+
+ README.md              |  6 ++--
+ configs/A.yaml         |  2 ++
+ src/baseline.py        | 93 +++++++++++++++++++++++++++++++++++++++++++-------
+ tests/test_baseline.py | 39 +++++++++++++++++++++
+ 4 files changed, 125 insertions(+), 15 deletions(-)

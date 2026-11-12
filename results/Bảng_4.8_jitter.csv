@@ -1,4 +1,0 @@
-﻿Điều kiện,Jitter A (std px),Jumps A (>80px),Jitter A+ (std px),Jumps A+ (>80px),Kết luận
-Trời mưa,23.49,2,1.95,0,jitter(A_opt) < jitter(A)
-Ban đêm,6.55,0,3.57,0,jitter(A_opt) < jitter(A)
-Ban ngày,0.0,0,12.2,0,jitter(A_opt) >= jitter(A)

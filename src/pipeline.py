@@ -12,7 +12,8 @@ import numpy as np
 import yaml
 
 from .baseline import detect_baseline
-from .departure import DepartureWarning, calculate_offset, compute_lateral_velocity_and_tlc
+from .departure import (DepartureWarning, calculate_offset,
+                       calculate_straight_lines_offset, compute_lateral_velocity_and_tlc)
 from .kalman import LaneKalmanFilter
 from .lane_fit import fit_support_overlaps, sliding_window_fit, validate_and_recover_lanes
 from .preprocess import canny_edges, lane_mask, roi_mask
@@ -74,9 +75,9 @@ class LanePipeline:
         lane_measurement_available = False
         offset_left = offset_right = None
         lost = False
+        active_source = self.data_source
         if method == "baseline":
             # Condition auto-switch (SPEC: dark_thr -> night; low contrast -> rain)
-            active_source = self.data_source
             if self.config.get("condition_auto"):
                 gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
                 if roi_polygon:
@@ -331,26 +332,49 @@ class LanePipeline:
         vehicle_x = vehicle_x_in_bev(width, height, matrix)
         if method == "baseline" and self.cam_offset_px != 0:
             vehicle_x += self.cam_offset_px
-        offset = calculate_offset(offset_left, offset_right, width,
-                                  float(lane_width_m) if lane_width_m is not None else None,
-                                  vehicle_x_px=vehicle_x,
-                                  y_eval=(min(bounds[1] for bounds in line_ranges.values()
-                                              if bounds is not None)
-                                          if method == "baseline" and line_ranges and
-                                          any(bounds is not None for bounds in line_ranges.values())
-                                          else 1.0),
-                                  meters_per_pixel=meter_scale_override,
-                                  reuse_scale=single_line)
-        if lane_measurement_available and not single_line:
-            self.last_meters_per_pixel = offset.get("meters_per_pixel")
-            self.baseline_last_valid_xm = offset.get("meters_per_pixel")
-        elif lost and self.baseline_last_valid_xm is not None:
-            offset["meters_per_pixel"] = self.baseline_last_valid_xm
+        y_eval_norm = (min(bounds[1] for bounds in line_ranges.values()
+                           if bounds is not None)
+                       if method == "baseline" and line_ranges and
+                       any(bounds is not None for bounds in line_ranges.values()) else 1.0)
+        if method == "baseline" and preprocess_cfg.get("smoothing_k") is not None:
+            y_eval_px = y_eval_norm * max(height - 1, 1)
+            if left is not None and right is not None:
+                left_line = self._fit_to_slope_intercept(left, height, width)
+                right_line = self._fit_to_slope_intercept(right, height, width)
+                offset = calculate_straight_lines_offset(
+                    left_line, right_line, y_eval_px, width,
+                    float(lane_width_m) if lane_width_m is not None else None,
+                    cam_offset_px=self.cam_offset_px,
+                    last_meters_per_pixel=self.baseline_last_valid_xm)
+            else:
+                offset = calculate_straight_lines_offset(
+                    None, None, y_eval_px, width,
+                    float(lane_width_m) if lane_width_m is not None else None,
+                    cam_offset_px=self.cam_offset_px,
+                    last_meters_per_pixel=self.baseline_last_valid_xm)
+            if lane_measurement_available and offset.get("meters_per_pixel") is not None:
+                self.baseline_last_valid_xm = offset["meters_per_pixel"]
+                self.last_meters_per_pixel = offset["meters_per_pixel"]
+            offset.update({"left_x_px": offset.get("x_left"), "right_x_px": offset.get("x_right"),
+                           "center_px": ((offset.get("x_left") + offset.get("x_right")) / 2.0
+                                          if offset.get("x_left") is not None and offset.get("x_right") is not None else None)})
+        else:
+            offset = calculate_offset(offset_left, offset_right, width,
+                                      float(lane_width_m) if lane_width_m is not None else None,
+                                      vehicle_x_px=vehicle_x, y_eval=y_eval_norm,
+                                      meters_per_pixel=meter_scale_override,
+                                      reuse_scale=single_line)
+            if lane_measurement_available and not single_line:
+                self.last_meters_per_pixel = offset.get("meters_per_pixel")
+                self.baseline_last_valid_xm = offset.get("meters_per_pixel")
+            elif lost and self.baseline_last_valid_xm is not None:
+                offset["meters_per_pixel"] = self.baseline_last_valid_xm
 
         baseline_tlc = None
         if method == "baseline":
             d_curr = offset.get("offset_m")
-            self.baseline_d_history.append(d_curr)
+            if not lost:
+                self.baseline_d_history.append(d_curr)
             velocity, baseline_tlc = compute_lateral_velocity_and_tlc(
                 list(self.baseline_d_history), float(current_fps or 30.0),
                 float(lane_width_m or 3.7))
@@ -426,6 +450,14 @@ class LanePipeline:
                 "single_line": single_line, "warning": warning,
                 "departure_record": departure_record, "timings_ms": blocks, "lost": lost}
 
+    @staticmethod
+    def _fit_to_slope_intercept(fit, height: int, width: int) -> tuple[float, float]:
+        """Convert normalized x(y) linear fit into image-space y = slope*x + intercept."""
+        slope_xy = float(fit[1]) * max(width - 1, 1) / max(height - 1, 1)
+        if abs(slope_xy) < 1e-12:
+            return 0.0, 0.0
+        intercept_xy = float(fit[2]) * max(width - 1, 1)
+        return 1.0 / slope_xy, -intercept_xy / slope_xy
     def _filter_fits(self, left, right):
         cfg = self.config.get("kalman", {})
         needed = ("dt", "process_noise", "measurement_noise", "initial_covariance")

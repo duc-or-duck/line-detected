@@ -5,7 +5,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from .kmeans import kmeans_labels
 from .preprocess import canny_edges, roi_mask
+from .segment_filter import is_valid_segment, valid_segment_mask
 
 
 def detect_baseline(image: np.ndarray, config: dict) -> dict:
@@ -39,39 +41,14 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
         roi_bottom = int(np.clip(np.max(roi_y), roi_top + 1, height - 1))
     else:
         roi_top, roi_bottom = 0, height - 1
-    candidates = {"left": [], "right": []}
-    candidate_lines = []
     min_abs_slope = config.get("min_abs_slope_by_source", {}).get(
         config.get("data_source"), config.get("min_abs_slope"))
     max_abs_slope = config.get("max_abs_slope_by_source", {}).get(
         config.get("data_source"), config.get("max_abs_slope"))
-    for x1, y1, x2, y2 in ([] if segments is None else segments[:, 0, :]):
-        if x2 == x1:
-            continue
-        slope = (y2 - y1) / (x2 - x1)
-        if slope == 0:
-            continue
-        if min_abs_slope is not None and abs(slope) < float(min_abs_slope):
-            continue
-        if max_abs_slope is not None and abs(slope) > float(max_abs_slope):
-            continue
-        if not _is_valid_lane_segment(x1, y1, x2, y2, gray, image, road_median, width, height):
-            continue
-        intercept = y1 - slope * x1
-        midpoint_x = (x1 + x2) / 2.0
-        midpoint_y = (y1 + y2) / 2.0
-        center_x = _roi_center_at_y(polygon, midpoint_y, width)
-        side = "left" if slope < 0 and midpoint_x < center_x else None
-        if slope > 0 and midpoint_x > center_x:
-            side = "right"
-        if side is not None:
-            length = float(np.hypot(x2 - x1, y2 - y1))
-            candidates[side].append((slope, intercept, length))
-            candidate_lines.append({
-                "side": side, "slope": slope, "intercept": intercept, "length": length,
-                "x_top": (roi_top - intercept) / slope,
-                "x_bottom": (roi_bottom - intercept) / slope,
-            })
+    candidates, candidate_lines = _collect_candidates(
+        segments, gray, image, road_median, polygon, width, height,
+        roi_top, roi_bottom, min_abs_slope, max_abs_slope)
+    cluster_count = config.get("kmeans", {}).get("clusters")
     fits = {"left": None, "right": None}
     line_ranges = {"left": None, "right": None}
     use_converging_pair = config.get("converging_hough_pair_by_source", {}).get(
@@ -88,7 +65,7 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
             if not side_candidates:
                 continue
             clustered = _filter_candidates_by_ego_cluster(
-                side_candidates, side, width, roi_bottom)
+                side_candidates, side, width, roi_bottom, cluster_count=cluster_count)
             inliers = _filter_slope_outliers(clustered)
             slopes = np.asarray([item[0] for item in inliers], dtype=np.float64)
             intercepts = np.asarray([item[1] for item in inliers], dtype=np.float64)
@@ -132,115 +109,86 @@ def detect_baseline(image: np.ndarray, config: dict) -> dict:
             "line_ranges": line_ranges}
 
 
+def _collect_candidates(segments: np.ndarray | None, gray: np.ndarray, image: np.ndarray,
+                        road_median: float, polygon: list[list[int]] | None,
+                        width: int, height: int, roi_top: int, roi_bottom: int,
+                        min_abs_slope: float | None,
+                        max_abs_slope: float | None
+                        ) -> tuple[dict[str, list[tuple[float, float, float]]], list[dict]]:
+    """Split Hough fragments into left/right lane candidates in one vectorized pass.
+
+    Every fragment is filtered by slope range, by the road cross-section paint test
+    (:func:`valid_segment_mask`) and by which side of the ROI centre it lies on.
+    """
+    empty = ({"left": [], "right": []}, [])
+    if segments is None or len(segments) == 0:
+        return empty
+    coords = np.asarray(segments, dtype=np.float64).reshape(-1, 4)
+    x1, y1, x2, y2 = (coords[:, index] for index in range(4))
+    delta_x = x2 - x1
+    with np.errstate(divide="ignore", invalid="ignore"):
+        slope = (y2 - y1) / delta_x
+
+    usable = (delta_x != 0) & (slope != 0) & np.isfinite(slope)
+    if min_abs_slope is not None:
+        usable &= np.abs(slope) >= float(min_abs_slope)
+    if max_abs_slope is not None:
+        usable &= np.abs(slope) <= float(max_abs_slope)
+    usable &= valid_segment_mask(coords, gray, image, road_median, width, height)
+    keep = np.flatnonzero(usable)
+    if keep.size == 0:
+        return empty
+
+    slopes = slope[keep]
+    intercepts = y1[keep] - slopes * x1[keep]
+    lengths = np.hypot(x2[keep] - x1[keep], y2[keep] - y1[keep])
+    midpoint_x = (x1[keep] + x2[keep]) / 2.0
+    midpoint_y = (y1[keep] + y2[keep]) / 2.0
+    center_x = _roi_center_at_y(polygon, midpoint_y, width)
+    is_left = (slopes < 0) & (midpoint_x < center_x)
+    is_right = (slopes > 0) & (midpoint_x > center_x)
+
+    candidates: dict[str, list[tuple[float, float, float]]] = {"left": [], "right": []}
+    candidate_lines: list[dict] = []
+    for position in np.flatnonzero(is_left | is_right):
+        side = "left" if is_left[position] else "right"
+        segment_slope = float(slopes[position])
+        intercept = float(intercepts[position])
+        length = float(lengths[position])
+        candidates[side].append((segment_slope, intercept, length))
+        candidate_lines.append({
+            "side": side, "slope": segment_slope, "intercept": intercept, "length": length,
+            "x_top": (roi_top - intercept) / segment_slope,
+            "x_bottom": (roi_bottom - intercept) / segment_slope,
+        })
+    return candidates, candidate_lines
+
+
 def _is_valid_lane_segment(x1: int, y1: int, x2: int, y2: int, gray: np.ndarray,
                            image: np.ndarray, road_median: float,
                            width: int, height: int) -> bool:
     """Filter out dark oil stains, tar cracks/seams, water ruts, and red taillight reflections."""
-    if road_median <= 5.0:
-        return True
-    dx, dy = x2 - x1, y2 - y1
-    length = float(np.hypot(dx, dy))
-    if length < 1e-3:
-        return False
-    nx, ny = -dy / length, dx / length
-
-    # Reject specular puddle reflection of red taillights on wet asphalt at night
-    if image.ndim == 3 and image.shape[2] == 3:
-        pts_x = np.linspace(x1, x2, 6).astype(int)
-        pts_y = np.linspace(y1, y2, 6).astype(int)
-        mr = float(np.mean(image[pts_y, pts_x, 2]))
-        mg = float(np.mean(image[pts_y, pts_x, 1]))
-        mb = float(np.mean(image[pts_y, pts_x, 0]))
-        if mr > 70 and mr > 1.4 * mg and mr > 1.5 * mb:
-            return False
-
-    # Sample perpendicular cross-section at multiple points along the segment
-    scale = max(1.0, width / 1280.0)
-    offsets = np.asarray([-12, -8, -4, -2, 0, 2, 4, 8, 12], dtype=np.float64) * scale
-
-    max_contrasts = []
-    min_contrasts = []
-    trough_count = 0
-
-    for alpha in (0.25, 0.50, 0.75):
-        mx = x1 + alpha * dx
-        my = y1 + alpha * dy
-        prof = []
-        for off in offsets:
-            px = int(np.clip(round(mx + off * nx), 0, width - 1))
-            py = int(np.clip(round(my + off * ny), 0, height - 1))
-            prof.append(float(gray[py, px]))
-        p_max = max(prof)
-        p_min = min(prof)
-        p_mid = prof[4]
-        p_left = min(prof[:3])
-        p_right = min(prof[6:])
-        max_contrasts.append(p_max - road_median)
-        min_contrasts.append(road_median - p_min)
-        if p_mid < p_left - 6 and p_mid < p_right - 6:
-            trough_count += 1
-
-    # Reject dark trough in cross-section (oil leak / water trench where center is darker than flanks)
-    if trough_count >= 2:
-        return False
-
-    median_max_c = float(np.median(max_contrasts))
-    median_min_c = float(np.median(min_contrasts))
-
-    # Adaptive minimum brightness contrast required for a painted marking
-    if road_median > 80.0:
-        min_bright_margin = 10.0
-    elif road_median > 40.0:
-        min_bright_margin = 7.0
-    else:
-        min_bright_margin = 4.0
-
-    # 1. Reject if no part of the cross section is brighter than the road asphalt
-    if median_max_c < min_bright_margin:
-        return False
-
-    # 2. Reject dark cracks / tar expansion joints / oil streaks:
-    # A dark crack dips significantly below asphalt (median_min_c > 20)
-    # but lacks strong bright paint contrast (median_max_c < 18).
-    if median_min_c > 20.0 and median_max_c < 18.0:
-        return False
-
-    # 3. Reject if the depression into dark is much stronger than bright contrast
-    if median_min_c > 25.0 and median_min_c > 2.5 * max(median_max_c, 1.0):
-        return False
-
-    return True
+    return is_valid_segment(x1, y1, x2, y2, gray, image, road_median, width, height)
 
 
 def _filter_candidates_by_ego_cluster(candidates: list[tuple[float, float, float]],
                                      side: str, width: int, roi_bottom: int,
-                                     vehicle_x: float | None = None) -> list[tuple[float, float, float]]:
-    """Select the spatial cluster of candidate segments corresponding to the ego lane."""
-    if len(candidates) <= 2:
+                                     vehicle_x: float | None = None,
+                                     cluster_count: int | None = None
+                                     ) -> list[tuple[float, float, float]]:
+    """Select the spatial cluster of candidate segments corresponding to the ego lane.
+
+    Fragments are grouped by where they cross the ROI bottom row: with
+    ``cluster_count`` configured the grouping is the project's self-implemented
+    K-means, otherwise a tolerance sweep. The ego-lane selection below is identical
+    for either grouping.
+    """
+    if len(candidates) <= 2 and not cluster_count:
         return candidates
     if vehicle_x is None:
         vehicle_x = width / 2.0
-    tol = max(20.0, 0.08 * width)
-    items = []
-    for c in candidates:
-        sl, ic, _ = c
-        xb = (roi_bottom - ic) / sl
-        items.append((c, xb))
-    items.sort(key=lambda it: it[1])
-    clusters = []
-    curr = [items[0]]
-    for it in items[1:]:
-        if abs(it[1] - curr[-1][1]) <= tol:
-            curr.append(it)
-        else:
-            clusters.append(curr)
-            curr = [it]
-    clusters.append(curr)
-    c_stats = []
-    for c in clusters:
-        supp = sum(it[0][2] for it in c)
-        avg_xb = float(np.average([it[1] for it in c], weights=[it[0][2] for it in c]))
-        c_stats.append({"cluster": [it[0] for it in c], "support": supp, "xb": avg_xb})
+    c_stats = (_kmeans_groups(candidates, roi_bottom, width, int(cluster_count))
+               if cluster_count else _tolerance_groups(candidates, roi_bottom, width))
     if side == "left":
         valid = [cs for cs in c_stats if cs["xb"] < vehicle_x]
         if valid:
@@ -307,17 +255,68 @@ def _select_converging_pair(lines: list[dict], width: int) -> tuple[dict, dict] 
     return left, right
 
 
-def _roi_center_at_y(polygon: list[list[int]] | None, y: float, width: int) -> float:
+def _roi_center_at_y(polygon: list[list[int]] | None, y: float | np.ndarray,
+                     width: int) -> float | np.ndarray:
+    """Horizontal centre of the ROI trapezoid at one row or a whole array of rows."""
+    rows = np.asarray(y, dtype=np.float64)
     if not polygon or len(polygon) < 4:
-        return width / 2.0
-    points = np.asarray(polygon, dtype=np.float64)
+        center = np.full(rows.shape, width / 2.0, dtype=np.float64)
+    else:
+        points = np.asarray(polygon, dtype=np.float64)
+        left_x = _edge_x_at_rows(points[0], points[3], rows)
+        right_x = _edge_x_at_rows(points[1], points[2], rows)
+        center = (left_x + right_x) / 2.0
+    return float(center) if rows.ndim == 0 else center
 
-    def interpolate_x(first: np.ndarray, second: np.ndarray) -> float:
-        if abs(second[1] - first[1]) < 1e-9:
-            return float((first[0] + second[0]) / 2.0)
-        ratio = np.clip((y - first[1]) / (second[1] - first[1]), 0.0, 1.0)
-        return float(first[0] + ratio * (second[0] - first[0]))
 
-    left_x = interpolate_x(points[0], points[3])
-    right_x = interpolate_x(points[1], points[2])
-    return (left_x + right_x) / 2.0
+def _edge_x_at_rows(first: np.ndarray, second: np.ndarray, rows: np.ndarray) -> np.ndarray:
+    """x of the trapezoid edge (first -> second) at every row, clamped to the edge span."""
+    delta_y = second[1] - first[1]
+    if abs(delta_y) < 1e-9:
+        return np.full(rows.shape, (first[0] + second[0]) / 2.0, dtype=np.float64)
+    ratio = np.clip((rows - first[1]) / delta_y, 0.0, 1.0)
+    return first[0] + ratio * (second[0] - first[0])
+def _tolerance_groups(candidates: list[tuple[float, float, float]], roi_bottom: int,
+                      width: int) -> list[dict]:
+    """Group fragments whose bottom-row crossings fall within a fixed tolerance."""
+    tolerance = max(20.0, 0.08 * width)
+    items = [(candidate, (roi_bottom - candidate[1]) / candidate[0])
+             for candidate in candidates]
+    items.sort(key=lambda item: item[1])
+    clusters = [[items[0]]]
+    for item in items[1:]:
+        if abs(item[1] - clusters[-1][-1][1]) <= tolerance:
+            clusters[-1].append(item)
+        else:
+            clusters.append([item])
+    return [_group_stats([item[0] for item in cluster], [item[1] for item in cluster])
+            for cluster in clusters]
+
+
+def _kmeans_groups(candidates: list[tuple[float, float, float]], roi_bottom: int,
+                   width: int, cluster_count: int) -> list[dict]:
+    """Group fragments with the self-implemented K-means on bottom-row position.
+
+    Falls back to the tolerance grouping when K-means cannot partition the input
+    (too few fragments, empty cluster, or a repeated partition).
+    """
+    bottom_x = np.asarray([(roi_bottom - candidate[1]) / candidate[0]
+                           for candidate in candidates], dtype=np.float64)
+    labels = kmeans_labels(bottom_x[:, None] / max(width, 1),
+                           min(int(cluster_count), len(candidates)))
+    if labels is None:
+        return _tolerance_groups(candidates, roi_bottom, width)
+    return [_group_stats([candidate for candidate, label in zip(candidates, labels)
+                          if label == cluster_id],
+                         [position for position, label in zip(bottom_x, labels)
+                          if label == cluster_id])
+            for cluster_id in np.unique(labels)]
+
+
+def _group_stats(members: list[tuple[float, float, float]],
+                 positions: list[float]) -> dict:
+    """Support (total fragment length) and length-weighted position of one group."""
+    weights = [candidate[2] for candidate in members]
+    return {"cluster": members,
+            "support": float(np.sum(weights)),
+            "xb": float(np.average(positions, weights=weights))}

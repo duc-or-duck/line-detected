@@ -1,0 +1,83 @@
+===== A_opt_day  h=720 w=1280 segments=178 =====
+         1179109 function calls in 3.125 seconds
+
+   Ordered by: internal time
+   List reduced from 118 to 18 due to restriction <18>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+    64272    0.588    0.000    0.843    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\_methods.py:96(_clip)
+     1152    0.421    0.000    2.568    0.002 c:\Users\Paul\Desktop\Projects\Line-detect\src\baseline.py:135(_is_valid_lane_segment)
+    62208    0.228    0.000    0.228    0.000 {built-in method builtins.round}
+       12    0.225    0.019    0.225    0.019 {HoughLinesP}
+   124416    0.202    0.000    0.202    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\getlimits.py:399(__init__)
+    62208    0.200    0.000    1.175    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:38(_wrapit)
+    64344    0.146    0.000    1.360    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:48(_wrapfunc)
+    64272    0.145    0.000    1.504    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:2245(clip)
+       12    0.073    0.006    3.125    0.260 c:\Users\Paul\Desktop\Projects\Line-detect\src\baseline.py:11(detect_baseline)
+     2280    0.062    0.000    0.062    0.000 {method 'partition' of 'numpy.ndarray' objects}
+    62208    0.062    0.000    0.892    0.000 {method 'clip' of 'numpy.ndarray' objects}
+     2304    0.059    0.000    0.086    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\function_base.py:27(linspace)
+       12    0.052    0.004    0.052    0.004 {Canny}
+     5736    0.043    0.000    0.122    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\_methods.py:115(_mean)
+     8424    0.042    0.000    0.042    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+     2280    0.040    0.000    0.234    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\lib\_function_base_impl.py:4004(_median)
+   126684    0.039    0.000    0.039    0.000 {built-in method builtins.getattr}
+    64512    0.035    0.000    0.035    0.000 {method 'wrap' of 'numpy._core._multiarray_umath._array_converter' objects}
+
+
+
+===== A_rain2  h=686 w=1316 segments=173 =====
+         1058521 function calls in 2.475 seconds
+
+   Ordered by: internal time
+   List reduced from 94 to 18 due to restriction <18>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+    57624    0.490    0.000    0.704    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\_methods.py:96(_clip)
+     1032    0.350    0.000    2.141    0.002 c:\Users\Paul\Desktop\Projects\Line-detect\src\baseline.py:135(_is_valid_lane_segment)
+    55728    0.189    0.000    0.189    0.000 {built-in method builtins.round}
+   111456    0.170    0.000    0.170    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\getlimits.py:399(__init__)
+    55728    0.167    0.000    0.983    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:38(_wrapit)
+    57624    0.124    0.000    1.139    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:48(_wrapfunc)
+    57624    0.120    0.000    1.259    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:2245(clip)
+       12    0.094    0.008    0.094    0.008 {HoughLinesP}
+       12    0.053    0.004    2.475    0.206 c:\Users\Paul\Desktop\Projects\Line-detect\src\baseline.py:11(detect_baseline)
+    55728    0.052    0.000    0.746    0.000 {method 'clip' of 'numpy.ndarray' objects}
+     2064    0.049    0.000    0.070    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\function_base.py:27(linspace)
+     5184    0.036    0.000    0.101    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\_methods.py:115(_mean)
+       12    0.034    0.003    0.034    0.003 {Canny}
+     7284    0.033    0.000    0.033    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+   113352    0.033    0.000    0.033    0.000 {built-in method builtins.getattr}
+     2088    0.033    0.000    0.170    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\lib\_function_base_impl.py:4004(_median)
+    57792    0.029    0.000    0.029    0.000 {method 'wrap' of 'numpy._core._multiarray_umath._array_converter' objects}
+    57792    0.027    0.000    0.027    0.000 {method 'as_arrays' of 'numpy._core._multiarray_umath._array_converter' objects}
+
+
+
+===== A_night  h=1080 w=1668 segments=46 =====
+         563125 function calls in 1.638 seconds
+
+   Ordered by: internal time
+   List reduced from 118 to 18 due to restriction <18>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+    30600    0.274    0.000    0.394    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\_methods.py:96(_clip)
+      552    0.197    0.000    1.200    0.002 c:\Users\Paul\Desktop\Projects\Line-detect\src\baseline.py:135(_is_valid_lane_segment)
+       12    0.111    0.009    0.111    0.009 {HoughLinesP}
+    29808    0.106    0.000    0.106    0.000 {built-in method builtins.round}
+    59616    0.095    0.000    0.095    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\getlimits.py:399(__init__)
+    29808    0.093    0.000    0.550    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:38(_wrapit)
+    30672    0.070    0.000    0.637    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:48(_wrapfunc)
+    30600    0.067    0.000    0.703    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\fromnumeric.py:2245(clip)
+       12    0.060    0.005    0.060    0.005 {Canny}
+       12    0.057    0.005    1.638    0.137 c:\Users\Paul\Desktop\Projects\Line-detect\src\baseline.py:11(detect_baseline)
+       12    0.048    0.004    0.048    0.004 {method 'apply' of 'cv2.CLAHE' objects}
+     1080    0.033    0.000    0.033    0.000 {method 'partition' of 'numpy.ndarray' objects}
+    29808    0.029    0.000    0.418    0.000 {method 'clip' of 'numpy.ndarray' objects}
+     1104    0.028    0.000    0.040    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\function_base.py:27(linspace)
+       12    0.026    0.002    0.184    0.015 c:\Users\Paul\Desktop\Projects\Line-detect\src\preprocess.py:45(canny_edges)
+     4044    0.022    0.000    0.022    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+     2736    0.021    0.000    0.057    0.000 C:\Users\Paul\anaconda3\Lib\site-packages\numpy\_core\_methods.py:115(_mean)
+       24    0.020    0.001    0.020    0.001 {cvtColor}
+
+
