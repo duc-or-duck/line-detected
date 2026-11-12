@@ -1,5 +1,0 @@
-﻿2026-11-12 | src/pipeline.py: _draw ROI restore
-Profile: one 1280x720 frame, _draw was the largest measured block (0.088 s cumulative in cProfile).
-Change: replace NumPy boolean advanced-index restoration with cv2.copyTo over the inverse ROI mask.
-Golden: tests/golden.npz pixel output unchanged; tests/test_golden_draw.py passed.
-Microbenchmark: warmup + five repetitions of 25 full-resolution draws; median 79.727 ms -> 7.599 ms (90.5% faster). These are renderer-only synthetic-frame timings, not end-to-end/FPS results.

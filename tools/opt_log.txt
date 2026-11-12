@@ -1,3 +1,0 @@
-Label input reader | ablation accepted CSV only | ablation accepts same row schema from CSV or JSON; scoring logic unchanged | dashboard label format mismatch discovered in repo
-VALID split filter | evaluator counted every labeled row | filters to frames listed VALID when split.json exists; legacy labels retain prior behavior | avoid TUNE/VALID leakage without breaking manual labels
-G1 | per-video BEV calibration from baseline soft labels | 8/8 test_video clips satisfy median angle <2°, width <5%, center <10% | projective geometry
