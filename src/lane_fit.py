@@ -27,16 +27,8 @@ def sliding_window_fit(binary: np.ndarray, config: dict,
         right_mask = np.abs(normalized_x - right_center) <= margin / max(width - 1, 1)
     else:
         histogram = np.sum(image[height // 2:, :] > 0, axis=0)
-        midpoint = width // 2
         expected_width = config.get("expected_lane_width_px")
-        if expected_width is not None and 0 < float(expected_width) < width:
-            left_base = _nearest_histogram_peak(histogram, 0, midpoint,
-                                                (width - 1 - float(expected_width)) / 2.0)
-            right_base = _nearest_histogram_peak(histogram, midpoint, width,
-                                                 (width - 1 + float(expected_width)) / 2.0)
-        else:
-            left_base = int(np.argmax(histogram[:midpoint])) if midpoint else 0
-            right_base = int(np.argmax(histogram[midpoint:]) + midpoint) if midpoint < width else width - 1
+        left_base, right_base = _ego_lane_histogram_pair(histogram, width, expected_width)
         scale = config.get("window_count")
         margin = config.get("window_margin")
         if scale is None or margin is None:
@@ -96,6 +88,34 @@ def _nearest_histogram_peak(histogram: np.ndarray, start: int, stop: int,
     return int(min(local, key=lambda index: (abs(index - target), -histogram[index])))
 
 
+def _ego_lane_histogram_pair(histogram: np.ndarray, width: int,
+                             expected_width: float | None) -> tuple[int, int]:
+    """Choose supported histogram peaks that surround the camera centre."""
+    midpoint = width / 2.0
+    peaks = np.flatnonzero((histogram > 0) &
+                           (histogram >= np.r_[histogram[0], histogram[:-1]]) &
+                           (histogram >= np.r_[histogram[1:], histogram[-1]]))
+    lefts, rights = peaks[peaks < midpoint], peaks[peaks > midpoint]
+    if not len(lefts) or not len(rights):
+        return (int(np.argmax(histogram[:int(midpoint)])) if midpoint else 0,
+                int(np.argmax(histogram[int(midpoint):]) + int(midpoint)) if midpoint < width else width - 1)
+    target = float(expected_width) if expected_width is not None else .32 * width
+    choices = []
+    for left in lefts:
+        for right in rights:
+            lane_width = right - left
+            if not .12 * width <= lane_width <= .60 * width:
+                continue
+            centre_penalty = abs((left + right) / 2 - midpoint) / width
+            width_penalty = abs(lane_width - target) / width
+            support = histogram[left] + histogram[right]
+            choices.append((centre_penalty + width_penalty - .002 * support, int(left), int(right)))
+    if not choices:
+        return int(lefts[np.argmax(histogram[lefts])]), int(rights[np.argmax(histogram[rights])])
+    _, left, right = min(choices)
+    return left, right
+
+
 def validate_and_recover_lanes(left: np.ndarray | None, right: np.ndarray | None,
                                width: int, height: int, config: dict
                                ) -> tuple[np.ndarray | None, np.ndarray | None, dict]:
@@ -105,12 +125,14 @@ def validate_and_recover_lanes(left: np.ndarray | None, right: np.ndarray | None
     y_top = 0.0 if y_top is None else float(y_top)
     y_bottom = 1.0 if y_bottom is None else float(y_bottom)
     rows = np.linspace(y_top, y_bottom, 10)
+    x_margin = float(config.get("valid_x_margin_norm", 0.0))
 
     def in_bounds(fit):
         if fit is None:
             return False
         values = np.polyval(np.asarray(fit, dtype=np.float64), rows)
-        return bool(np.isfinite(values).all() and np.all((values >= 0) & (values <= 1)))
+        return bool(np.isfinite(values).all() and
+                    np.all((values >= x_margin) & (values <= 1.0 - x_margin)))
 
     valid_left, valid_right = in_bounds(left), in_bounds(right)
     left = np.asarray(left, dtype=np.float64) if valid_left else None
@@ -164,8 +186,94 @@ def fit_support_overlaps(diagnostics: dict, window_count: int,
     return shared_span >= float(minimum_windows) / max(int(window_count), 1)
 
 
+def constrain_lane_pair(left: np.ndarray | None, right: np.ndarray | None,
+                        line_ranges: dict | None, width: int,
+                        min_width_norm: float = 0.05,
+                        max_width_norm: float = 0.95) -> tuple[float, float] | None:
+    """Return the shared supported y-span where lane boundaries stay ordered."""
+    if left is None or right is None:
+        return None
+    ranges = line_ranges or {}
+    left_range = ranges.get("left") or (0.0, 1.0)
+    right_range = ranges.get("right") or (0.0, 1.0)
+    low = max(float(left_range[0]), float(right_range[0]))
+    high = min(float(left_range[1]), float(right_range[1]))
+    if high <= low:
+        return None
+    ys = np.linspace(low, high, 256)
+    gap = (np.polyval(right, ys) - np.polyval(left, ys))
+    valid = np.isfinite(gap) & (gap >= min_width_norm) & (gap <= max_width_norm)
+    indices = np.flatnonzero(valid)
+    if not len(indices):
+        return None
+    runs = np.split(indices, np.flatnonzero(np.diff(indices) > 1) + 1)
+    longest = max(runs, key=len)
+    if len(longest) < 5:
+        return None
+    return float(ys[longest[0]]), float(ys[longest[-1]])
+
+
+def output_geometry_is_valid(left: np.ndarray | None, right: np.ndarray | None,
+                             bounds: dict | None, width: int, config: dict) -> bool:
+    """Reject extrapolated hooks and implausible lane pairs after unwarping."""
+    minimum = config.get("min_lane_width_norm")
+    maximum = config.get("max_lane_width_norm")
+    safe = constrain_lane_pair(left, right, bounds, width,
+                               .05 if minimum is None else float(minimum),
+                               .95 if maximum is None else float(maximum))
+    if safe is None:
+        return False
+    low, high = safe
+    if high - low < float(config.get("minimum_support_norm", .15)):
+        return False
+    ys = np.linspace(low, high, 64)
+    lx, rx = np.polyval(left, ys), np.polyval(right, ys)
+    lane_width = rx - lx
+    if not (np.isfinite(lx).all() and np.isfinite(rx).all() and np.all(lane_width > 0)):
+        return False
+    if config.get("require_ego_containment", False):
+        # At the closest observed row the ego lane must surround the optical
+        # centre.  A small margin permits ordinary lateral offset while
+        # rejecting a pair made from adjacent centre-line strokes.
+        margin = float(config.get("ego_containment_margin", .10)) * lane_width[-1]
+        if not lx[-1] - margin <= .5 <= rx[-1] + margin:
+            return False
+    chord = lambda values: np.linspace(values[0], values[-1], len(values))
+    bend = max(float(np.max(np.abs(lx - chord(lx)))), float(np.max(np.abs(rx - chord(rx)))))
+    limit = float(config.get("max_curve_deviation_lane_fraction", .25)) * float(np.median(lane_width))
+    # Perspective naturally makes the apparent width change in the original
+    # camera image. Width consistency is checked in BEV before unwarping;
+    # rejecting it here would discard every valid perspective lane.
+    return bend <= limit
+
+
 def _fit(y: np.ndarray, x: np.ndarray, min_points: int) -> np.ndarray | None:
     if len(x) < max(3, min_points):
         return None
-    fit = np.polyfit(y, x, 2)
+    # A quadratic fit is unstable when sliding windows found pixels in only
+    # one or two rows (common with glare, road seams, and sparse night markings).
+    # Reject near-horizontal support; use a line until pixels span enough of
+    # the image to justify curvature.
+    y_span = float(np.ptp(y))
+    if np.unique(y).size < 2 or y_span < 0.015:
+        return None
+    if y_span < 0.25 or np.unique(y).size < 3:
+        degree = 1
+    else:
+        degree = 2
+    inliers = np.ones(len(x), dtype=bool)
+    fit = None
+    for _ in range(3):
+        if int(inliers.sum()) < max(3, min_points):
+            return None
+        coefficients = np.polyfit(y[inliers], x[inliers], degree)
+        fit = coefficients if degree == 2 else np.asarray([0.0, *coefficients])
+        residuals = np.abs(x - np.polyval(fit, y))
+        center = float(np.median(residuals[inliers]))
+        mad = float(np.median(np.abs(residuals[inliers] - center)))
+        cutoff = max(center + 3.5 * 1.4826 * mad, 0.008)
+        updated = residuals <= cutoff
+        if np.array_equal(updated, inliers):
+            break
+        inliers = updated
     return fit if np.isfinite(fit).all() else None

@@ -3,4 +3,5 @@ numpy==2.5.4; python_version >= "3.13"
 opencv-python==4.9.0.80; python_version < "3.13"
 opencv-python==4.14.0.94; python_version >= "3.13"
 PyYAML==6.0.1
+Pillow>=10.0
 pytest==8.2.0

@@ -1,0 +1,6 @@
+﻿Phép tăng cường,Ban đêm (%),Trời mưa (%),Ghi chú
+Không tăng cường,n/a,n/a,Không có nhãn; phép tăng cường chưa được bật trong pipeline B–F
+Gamma,n/a,n/a,Không có nhãn; phép tăng cường chưa được bật trong pipeline B–F
+Log,n/a,n/a,Không có nhãn; phép tăng cường chưa được bật trong pipeline B–F
+Cân bằng histogram,n/a,n/a,Không có nhãn; phép tăng cường chưa được bật trong pipeline B–F
+CLAHE,n/a,n/a,Không có nhãn; phép tăng cường chưa được bật trong pipeline B–F

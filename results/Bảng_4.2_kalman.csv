@@ -1,0 +1,5 @@
+﻿Kịch bản,Sai lệch tối đa,RMSE đo thô,RMSE sau lọc,Ghi chú
+OpenCV sequence,3.46944695195e-18,n/a,n/a,3 measurements; CV_64F
+Synthetic low noise,n/a,0.00471657,0.00280253,Seed 42; reproduced from test_kalman.py
+Synthetic noise and dropout,n/a,0.04021889,0.01705650,Seed 42; reproduced from test_kalman.py
+Real clip,n/a,n/a,n/a,No labeled real sequence available

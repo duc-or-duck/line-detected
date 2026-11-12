@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -33,12 +34,12 @@ def main() -> None:
     rows = []
     pixel_rows = []
     reasons = []
-    config_names = ["A", "A+", "B", "C", "D", "E", "F"]
+    config_names = ["A", "B", "C", "D", "E", "F"]
     for name in config_names:
-        cfg_file = "A_opt.yaml" if name == "A+" else f"{name}.yaml"
+        cfg_file = f"{name}.yaml"
         cfg_path = ROOT / "configs" / cfg_file
         if not cfg_path.is_file():
-            row_label = "A+ (baseline tối ưu)" if name == "A+" else f"{name}. " + _label(name)
+            row_label = f"{name}. " + _label(name)
             rows.append([row_label, NA, NA, NA, NA, 0, "Thiếu tệp cấu hình"])
             continue
         config = load_config(cfg_path)
@@ -46,7 +47,7 @@ def main() -> None:
         reason = score.get("reason", "") or "Không có kết quả"
         reasons.append(reason)
         accuracy = score.get("accuracy")
-        row_label = "A+ (baseline tối ưu)" if name == "A+" else f"{name}. " + _label(name)
+        row_label = f"{name}. " + _label(name)
         rows.append([row_label, _value(100 * accuracy if accuracy is not None else None),
                      _value(score.get("fp")), _value(score.get("fn")),
                      _value(score.get("pixel_error")), score.get("frames", 0), reason])
@@ -73,11 +74,6 @@ def main() -> None:
     warning_rows = _warning_rows(args.warning_labels)
     write_csv("Hình_4.3_departure_warning.csv", warning_headers, warning_rows)
 
-    # Bảng Jitter & Frame-to-frame stability (A vs A+)
-    jitter_headers = ["Điều kiện", "Jitter A (std px)", "Jumps A (>80px)", "Jitter A+ (std px)", "Jumps A+ (>80px)", "Kết luận"]
-    jitter_rows = _compute_jitter_table()
-    write_csv("Bảng_4.8_jitter.csv", jitter_headers, jitter_rows)
-
     placeholder_png("Hình_4.1_hough_sensitivity.png", "Hình 4.1. Độ nhạy tham số Hough",
                     "Thiếu dữ liệu TuSimple và các giá trị tham số Hough.")
     placeholder_png("Hình_4.2_dashcam_comparison.png", "Hình 4.2. So sánh trên video dashcam",
@@ -94,9 +90,6 @@ def main() -> None:
     print("\n=== BẢNG 4.4: DASHCAM PERFORMANCE ===")
     _print_table(dashcam_headers, dashcam_rows)
 
-    print("\n=== BẢNG ĐỘ ỔN ĐỊNH VÀ CHỐNG NHẢY KHUNG HÌNH (JITTER: A vs A+) ===")
-    _print_table(jitter_headers, jitter_rows)
-
     print("\n=== BẢNG CẢNH BÁO CHỆCH LÀN (DEPARTURE WARNING: FALSE ALARMS) ===")
     _print_table(warning_headers, warning_rows)
 
@@ -106,6 +99,10 @@ def main() -> None:
 def _read_rows(path: str | None) -> list[dict[str, str]]:
     if not path or not Path(path).is_file():
         return []
+    if Path(path).suffix.lower() == ".json":
+        with Path(path).open("r", encoding="utf-8-sig") as stream:
+            rows = json.load(stream)
+        return rows if isinstance(rows, list) else []
     with Path(path).open("r", encoding="utf-8-sig", newline="") as stream:
         return list(csv.DictReader(stream))
 
@@ -124,10 +121,15 @@ def _truth(value: str | None) -> bool | None:
 def _dashcam_rows(label_path: str | None) -> list[list[object]]:
     annotations = _read_rows(label_path)
     labels = {"day": "Ban ngày", "night": "Ban đêm", "rain": "Trời mưa"}
+    split_path = ROOT / "tools" / "split.json"
+    if split_path.is_file():
+        split = json.loads(split_path.read_text(encoding="utf-8"))
+        valid = {name: {str(i) for i in parts.get("valid", [])}
+                 for name, parts in split.get("videos", {}).items()}
+        annotations = [row for row in annotations
+                       if str(row.get("frame", "")) in valid.get(Path(str(row.get("video", ""))).name, set())]
     if not annotations:
-        res = [[label, NA, NA, NA, NA, "Thiếu video và khung gán nhãn"] for label in labels.values()]
-        res.append(["A+ (baseline tối ưu)", NA, NA, NA, NA,
-                    "Tối ưu hóa Canny, ROI, và chống nhảy khung hình cho mưa và đêm"])
+        res = [[label, NA, NA, NA, NA, "Thiếu nhãn hoặc split VALID"] for label in labels.values()]
         return res
     config = load_config(ROOT / "configs/F.yaml")
     result = []
@@ -151,72 +153,7 @@ def _dashcam_rows(label_path: str | None) -> list[list[object]]:
         if fps is None:
             notes.append("Thiếu video mở được hoặc số lần lặp N trong YAML")
         result.append([display, len(rows), _rate(baseline), _rate(proposed), _value(fps), "; ".join(notes)])
-    result.append(["A+ (baseline tối ưu)", NA, NA, NA, NA,
-                   "Tối ưu hóa Canny, ROI, và chống nhảy khung hình cho mưa và đêm"])
     return result
-
-
-def _compute_jitter_table() -> list[list[object]]:
-    """Compute frame-to-frame jitter (std of delta x at bottom) and count of jumps > 80px (SPEC 3.6)."""
-    import cv2
-    import numpy as np
-    from src.pipeline import LanePipeline
-
-    cfg_a_path = ROOT / "configs/A.yaml"
-    cfg_opt_path = ROOT / "configs/A_opt.yaml"
-    if not cfg_a_path.is_file() or not cfg_opt_path.is_file():
-        return [["Ban ngày", NA, NA, NA, NA, "Thiếu tệp cấu hình"],
-                ["Ban đêm", NA, NA, NA, NA, "Thiếu tệp cấu hình"],
-                ["Trời mưa", NA, NA, NA, NA, "Thiếu tệp cấu hình"]]
-
-    cfg_a = load_config(cfg_a_path)
-    cfg_opt = load_config(cfg_opt_path)
-
-    vids = {
-        "Trời mưa": (ROOT / "test_video/YTSave.to_YouTube_Media_2CIxM7x-Clc_Lane-detect-test-data_001_720p.mp4", "rain"),
-        "Ban đêm": (ROOT / "test_video/YTSave.to_YouTube_Media_MefjPQfHBJA_Tesla-Full-Self-Driving-prevents-night-time-deer-strike-front-camera-FSD-fullsel_003_1080p.mp4", "night"),
-        "Ban ngày": (ROOT / "test_video/YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4", "day"),
-    }
-
-    jump_px = float(cfg_opt.get("preprocess", {}).get("jump_px", 80))
-    table_rows = []
-
-    for display, (vpath, src) in vids.items():
-        if not vpath.is_file():
-            table_rows.append([display, NA, NA, NA, NA, "Thiếu video kiểm thử"])
-            continue
-        cap = cv2.VideoCapture(str(vpath))
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        pipe_a = LanePipeline(cfg_a, src)
-        pipe_opt = LanePipeline(cfg_opt, src)
-        xs_a, xs_opt = [], []
-        for _ in range(50):
-            ret, frame = cap.read()
-            if not ret:
-                break
-            ra = pipe_a.process(frame.copy(), method="baseline")
-            ro = pipe_opt.process(frame.copy(), method="baseline")
-            xa = np.polyval(ra["left"], 1.0) * (w - 1) if ra.get("left") is not None else None
-            xo = np.polyval(ro["left"], 1.0) * (w - 1) if ro.get("left") is not None else None
-            xs_a.append(xa)
-            xs_opt.append(xo)
-        cap.release()
-
-        def stats(xs):
-            deltas = [abs(xs[i] - xs[i-1]) for i in range(1, len(xs)) if xs[i] is not None and xs[i-1] is not None]
-            if not deltas:
-                return (NA, 0, 0)
-            return (round(float(np.std(deltas)), 2), sum(1 for d in deltas if d > jump_px), len(deltas))
-
-        sa, ja, na = stats(xs_a)
-        so, jo, no = stats(xs_opt)
-        if isinstance(sa, (int, float)) and isinstance(so, (int, float)):
-            conclusion = f"jitter(A_opt) < jitter(A)" if so < sa else "jitter(A_opt) >= jitter(A)"
-        else:
-            conclusion = NA
-        table_rows.append([display, sa, ja, so, jo, conclusion])
-
-    return table_rows
 
 
 def _print_table(headers: list[str], rows: list[list[object]]) -> None:
@@ -282,7 +219,6 @@ def _value(value):
 
 def _label(name: str) -> str:
     return {"A": "Canny + ROI + Hough",
-            "A+": "baseline tối ưu",
             "B": "HLS + ROI + Hough",
             "C": "HLS + BEV + cửa sổ trượt + đa thức",
             "D": "C + tìm quanh đa thức trước",

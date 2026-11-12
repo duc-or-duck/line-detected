@@ -8,7 +8,7 @@ def test_all_ablation_configs_load_and_keep_unknowns_null():
         config = load_config(f"configs/{name}.yaml")
         assert config["seed"] == 42
         assert config["evaluation"]["tune_samples"] is None
-        assert set(config["homography"]) == {"tusimple", "culane", "day", "night", "rain"}
+        assert set(config["homography"]) == {"tusimple", "day", "night", "rain"}
 
 
 def test_proposed_day_demo_uses_its_configured_roi_by_default():
@@ -28,9 +28,8 @@ def test_baseline_runs_with_unknown_hough_values_without_guessing():
 def test_baseline_does_not_paint_stale_lanes_over_missing_frame():
     config = load_config("configs/A.yaml")
     pipeline = LanePipeline(config, "night")
-    pipeline.previous_baseline_fits = (np.array([0.0, 0.0, .25]),
-                                       np.array([0.0, 0.0, .75]))
-    pipeline.previous_display_fits = pipeline.previous_baseline_fits
+    pipeline.previous_display_fits = (np.array([0.0, 0.0, .25]),
+                                      np.array([0.0, 0.0, .75]))
     pipeline.previous_display_ranges = {"left": (0.2, 1.0), "right": (0.2, 1.0)}
     result = pipeline.process(np.zeros((80, 120, 3), dtype=np.uint8), "baseline")
     assert result["left"] is None and result["right"] is None

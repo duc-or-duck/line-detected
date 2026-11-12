@@ -1,0 +1,216 @@
+20261110-0654-27.3891997.mp4:
+  bev_size:
+  - 1302
+  - 570
+  center_error_pct: 4.972
+  destination:
+  - - 390.59999999999997
+    - 57.0
+  - - 911.4
+    - 57.0
+  - - 390.59999999999997
+    - 541.5
+  - - 911.4
+    - 541.5
+  k: 0.7
+  lane_width_error_pct: 3.452
+  source:
+  - - 399.84
+    - 498.68
+  - - 877.43
+    - 498.68
+  - - 287.7
+    - 569.21
+  - - 969.98
+    - 569.21
+  vertical_angle_deg: 1.144
+  y_vp: 334.1
+Screen Recording 2026-11-10 070340.mp4:
+  bev_size:
+  - 1316
+  - 686
+  center_error_pct: 4.397
+  destination:
+  - - 394.8
+    - 68.60000000000001
+  - - 921.1999999999999
+    - 68.60000000000001
+  - - 394.8
+    - 651.6999999999999
+  - - 921.1999999999999
+    - 651.6999999999999
+  k: 0.7
+  lane_width_error_pct: 1.771
+  source:
+  - - 309.45
+    - 617.12
+  - - 786.48
+    - 617.12
+  - - 192.45
+    - 685.05
+  - - 873.92
+    - 685.05
+  vertical_angle_deg: 0.472
+  y_vp: 458.63
+Screen Recording 2026-11-10 070635.mp4:
+  bev_size:
+  - 1298
+  - 718
+  center_error_pct: 4.715
+  destination:
+  - - 389.4
+    - 71.8
+  - - 908.5999999999999
+    - 71.8
+  - - 389.4
+    - 682.1
+  - - 908.5999999999999
+    - 682.1
+  k: 0.7
+  lane_width_error_pct: 1.739
+  source:
+  - - 305.94
+    - 630.89
+  - - 935.73
+    - 630.89
+  - - 160.97
+    - 717.0
+  - - 1060.67
+    - 717.0
+  vertical_angle_deg: 0.576
+  y_vp: 429.96
+YTSave.to_YouTube_Media_2CIxM7x-Clc_Lane-detect-test-data_001_720p.mp4:
+  bev_size:
+  - 1280
+  - 720
+  center_error_pct: 1.968
+  destination:
+  - - 384.0
+    - 72.0
+  - - 896.0
+    - 72.0
+  - - 384.0
+    - 684.0
+  - - 896.0
+    - 684.0
+  k: 0.7
+  lane_width_error_pct: 0.402
+  source:
+  - - 237.78
+    - 584.79
+  - - 950.75
+    - 584.79
+  - - 61.33
+    - 719.0
+  - - 1079.86
+    - 719.0
+  vertical_angle_deg: 0.242
+  y_vp: 271.62
+YTSave.to_YouTube_Media_6q5_A5wOwDM_Lane-Detection-Test-Video-01_001_720p.mp4:
+  bev_size:
+  - 1280
+  - 720
+  center_error_pct: 9.375
+  destination:
+  - - 384.0
+    - 72.0
+  - - 896.0
+    - 72.0
+  - - 384.0
+    - 684.0
+  - - 896.0
+    - 684.0
+  k: 0.7
+  lane_width_error_pct: 2.035
+  source:
+  - - 420.68
+    - 658.79
+  - - 806.81
+    - 658.79
+  - - 325.31
+    - 719.0
+  - - 876.92
+    - 719.0
+  vertical_angle_deg: 0.656
+  y_vp: 518.28
+YTSave.to_YouTube_Media_B6WK5qZLkbQ_test-video-for-lane-detection_001_720p.mp4:
+  bev_size:
+  - 1280
+  - 720
+  center_error_pct: 1.342
+  destination:
+  - - 384.0
+    - 72.0
+  - - 896.0
+    - 72.0
+  - - 384.0
+    - 684.0
+  - - 896.0
+    - 684.0
+  k: 0.7
+  lane_width_error_pct: 0.214
+  source:
+  - - 379.92
+    - 589.24
+  - - 860.6
+    - 589.24
+  - - 298.98
+    - 719.0
+  - - 985.67
+    - 719.0
+  vertical_angle_deg: 0.125
+  y_vp: 286.45
+? YTSave.to_YouTube_Media_MefjPQfHBJA_Tesla-Full-Self-Driving-prevents-night-time-deer-strike-front-camera-FSD-fullsel_003_1080p.mp4
+: bev_size:
+  - 1668
+  - 1080
+  center_error_pct: 2.974
+  destination:
+  - - 500.4
+    - 108.0
+  - - 1167.6
+    - 108.0
+  - - 500.4
+    - 1026.0
+  - - 1167.6
+    - 1026.0
+  k: 0.7
+  lane_width_error_pct: 0.577
+  source:
+  - - 360.09
+    - 907.95
+  - - 1356.37
+    - 907.95
+  - - 156.48
+    - 1078.5
+  - - 1579.74
+    - 1078.5
+  vertical_angle_deg: 0.132
+  y_vp: 510.01
+YTSave.to_YouTube_Media_cpGd2cIDY5s_Short-Video-Clip-Lane-detection-Check_001_1080p.mp4:
+  bev_size:
+  - 1920
+  - 1080
+  center_error_pct: 3.266
+  destination:
+  - - 576.0
+    - 108.0
+  - - 1344.0
+    - 108.0
+  - - 576.0
+    - 1026.0
+  - - 1344.0
+    - 1026.0
+  k: 0.7
+  lane_width_error_pct: 1.178
+  source:
+  - - 246.44
+    - 906.21
+  - - 1471.88
+    - 906.21
+  - - -98.02
+    - 1078.5
+  - - 1652.6
+    - 1078.5
+  vertical_angle_deg: 0.278
+  y_vp: 504.21

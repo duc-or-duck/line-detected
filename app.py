@@ -19,7 +19,9 @@ def main() -> None:
     parser.add_argument("--method", choices=("baseline", "proposed"), required=True)
     parser.add_argument("--config", help="Tep YAML; mac dinh A cho baseline, E cho proposed")
     parser.add_argument("--data-source", choices=("tusimple", "culane", "day", "night", "rain"))
+    parser.add_argument("--video-id", help="Ten video de chon BEV da hieu chuan; mac dinh ten --input")
     parser.add_argument("--csv-out", help="Duong dan CSV ket qua canh bao chech lan")
+    parser.add_argument("--output", help="Duong dan video MP4 demo; mac dinh results/<ten_video>_demo.mp4")
     parser.add_argument("--no-display", action="store_true", help="Chay khong hien thi cua so OpenCV")
     args = parser.parse_args()
     config_path = Path(args.config or ("configs/A.yaml" if args.method == "baseline" else "configs/E.yaml"))
@@ -27,7 +29,13 @@ def main() -> None:
     capture = cv2.VideoCapture(args.input)
     if not capture.isOpened():
         raise SystemExit(f"Cannot open input video: {args.input}")
-    pipeline = LanePipeline(config, args.data_source)
+    output_path = Path(args.output) if args.output else Path("results") / f"{Path(args.input).stem}_demo.mp4"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_fps = capture.get(cv2.CAP_PROP_FPS)
+    if not np.isfinite(output_fps) or output_fps <= 0:
+        output_fps = 30.0
+    writer = None
+    pipeline = LanePipeline(config, args.data_source, args.video_id or Path(args.input).name)
     processed_frames = 0
     processing_seconds = 0.0
     while True:
@@ -41,6 +49,13 @@ def main() -> None:
         fps = processed_frames / processing_seconds if processing_seconds else 0.0
         cv2.putText(result["frame"], f"FPS: {fps:.1f}", (24, 110),
                     cv2.FONT_HERSHEY_SIMPLEX, .65, (255, 255, 255), 2, cv2.LINE_AA)
+        if writer is None:
+            height, width = result["frame"].shape[:2]
+            writer = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"),
+                                     output_fps, (width, height))
+            if not writer.isOpened():
+                capture.release()
+                raise SystemExit(f"Cannot write output video: {output_path}")
         if result["lane_measurement_available"] and result["offset_m"] is not None:
             offset_text = f"DO LECH: {result['offset_m']:+.3f} m ({result['offset_px']:+.1f} px)"
             cv2.putText(result["frame"], offset_text, (24, 76),
@@ -48,11 +63,15 @@ def main() -> None:
         elif result["lane_measurement_available"] and result["offset_px"] is not None:
             cv2.putText(result["frame"], f"DO LECH: {result['offset_px']:+.1f} px (chua hieu chuan)",
                         (24, 76), cv2.FONT_HERSHEY_SIMPLEX, .65, (255, 255, 255), 2, cv2.LINE_AA)
+        writer.write(result["frame"])
         if not args.no_display:
             cv2.imshow("Phat hien lan duong", result["frame"])
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     capture.release()
+    if writer is not None:
+        writer.release()
+        print(f"Da ghi video demo: {output_path}")
     if not args.no_display:
         cv2.destroyAllWindows()
 

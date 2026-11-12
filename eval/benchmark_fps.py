@@ -18,14 +18,15 @@ from eval.common import NA, write_csv
 from src.pipeline import LanePipeline, load_config
 
 
-def benchmark(video: Path, config: dict, data_source: str | None = None) -> list[list[object]]:
+def benchmark(video: Path, config: dict, data_source: str | None = None,
+              video_id: str | None = None) -> list[list[object]]:
     runs = config.get("evaluation", {}).get("fps_runs")
     if runs is None:
         return [[block, NA, NA, NA, NA, "Thiếu số lần lặp N trong YAML"] for block in _blocks()]
     capture = cv2.VideoCapture(str(video))
     if not capture.isOpened():
         return [[block, NA, NA, NA, NA, f"Không mở được video: {video}"] for block in _blocks()]
-    pipeline = LanePipeline(config, data_source)
+    pipeline = LanePipeline(config, data_source, video_id or video.name)
     timings: dict[str, list[float]] = {}
     count = 0
     processing_seconds = 0.0
@@ -71,9 +72,10 @@ def main() -> None:
     parser.add_argument("--video", required=True)
     parser.add_argument("--config", default="configs/E.yaml")
     parser.add_argument("--data-source", choices=("day", "night", "rain", "tusimple", "culane"))
+    parser.add_argument("--video-id")
     args = parser.parse_args()
     config = load_config(ROOT / args.config)
-    rows = benchmark(Path(args.video), config, args.data_source)
+    rows = benchmark(Path(args.video), config, args.data_source, args.video_id)
     write_csv("Bảng_4.6_runtime.csv", ["Khối", "Thời gian (ms)", "Tỷ lệ (%)",
                                       "FPS trung bình", "Số khung", "Ghi chú"], rows)
     print("Đã ghi results/Bảng_4.6_runtime.csv")

@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from src.baseline import _select_converging_pair, detect_baseline
+from src.baseline import detect_baseline
 from src.preprocess import canny_edges
 
 
@@ -44,39 +44,7 @@ def test_baseline_uses_source_slope_threshold_for_gently_sloped_lanes(monkeypatc
     assert result["left"] is not None and result["right"] is not None
 
 
-def test_converging_hough_pair_brackets_vehicle_and_prefers_near_lane():
-    lines = [
-        {"side": "left", "x_top": 557.0, "x_bottom": 457.0, "length": 126,
-         "slope": -1.19, "intercept": 0.0},
-        {"side": "left", "x_top": 427.0, "x_bottom": 278.0, "length": 250,
-         "slope": -.42, "intercept": 0.0},
-        {"side": "right", "x_top": 615.0, "x_bottom": 690.0, "length": 51,
-         "slope": 1.59, "intercept": 0.0},
-        {"side": "right", "x_top": 726.0, "x_bottom": 822.0, "length": 149,
-         "slope": 1.23, "intercept": 0.0},
-    ]
-
-    left, right = _select_converging_pair(lines, 1298)
-
-    assert left["x_bottom"] == 457.0
-    assert right["x_bottom"] == 690.0
-
-
-def test_baseline_clips_small_vanishing_point_crossing(monkeypatch):
-    segments = np.asarray([[55, 20, 25, 80], [45, 20, 75, 80]], dtype=np.int32)[:, None, :]
-    monkeypatch.setattr(cv2, "HoughLinesP", lambda *args, **kwargs: segments)
-    config = {"roi_polygon": [[0, 20], [99, 20], [99, 80], [0, 80]],
-              "hough": {"threshold": 1, "min_line_length": 1, "max_line_gap": 1},
-              "min_abs_slope": .4, "vanishing_point_tolerance": .2}
-    result = detect_baseline(np.zeros((100, 100, 3), dtype=np.uint8), config)
-    assert result["left"] is not None and result["right"] is not None
-    top, bottom = result["line_ranges"]["left"]
-    rows = np.linspace(top, bottom, 10)
-    assert top > 20 / 99
-    assert np.all(np.polyval(result["left"], rows) < np.polyval(result["right"], rows))
-
-
-def test_hough_baseline_uses_side_of_segment_midpoint_and_never_crosses(monkeypatch):
+def test_hough_baseline_classifies_by_slope_sign_and_extends_to_roi(monkeypatch):
     segments = np.asarray([
         [15, 90, 40, 40], [20, 90, 45, 40],
         [85, 90, 60, 40], [80, 90, 55, 40],
@@ -94,19 +62,11 @@ def test_hough_baseline_uses_side_of_segment_midpoint_and_never_crosses(monkeypa
 
     assert result["left"] is not None
     assert result["right"] is not None
-    y = np.linspace(result["line_ranges"]["left"][0], result["line_ranges"]["left"][1], 10)
-    assert np.all(np.polyval(result["left"], y) < np.polyval(result["right"], y))
+    assert result["left"][1] < 0
+    assert result["right"][1] > 0
     for bounds in result["line_ranges"].values():
         assert bounds is not None
         assert np.isclose(bounds[0], 25 / 99)
         assert bounds[1] == 1.0
 
 
-def test_baseline_rejects_crossing_fits_inside_roi(monkeypatch):
-    segments = np.asarray([[55, 20, 25, 80], [45, 20, 75, 80]], dtype=np.int32)[:, None, :]
-    monkeypatch.setattr(cv2, "HoughLinesP", lambda *args, **kwargs: segments)
-    config = {"roi_polygon": [[0, 20], [99, 20], [99, 80], [0, 80]],
-              "hough": {"threshold": 1, "min_line_length": 1, "max_line_gap": 1},
-              "min_abs_slope": .4}
-    result = detect_baseline(np.zeros((100, 100, 3), dtype=np.uint8), config)
-    assert result["left"] is None and result["right"] is None

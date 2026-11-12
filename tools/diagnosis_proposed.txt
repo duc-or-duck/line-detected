@@ -1,0 +1,15 @@
+1. Homography B-F chỉ có điểm TuSimple; source/destination day/night/rain đều null, nên BEV không được hiệu chuẩn cho dashcam.
+2. ROI B, C, D, F chỉ có day; E có night/rain ROI nhưng vẫn không có homography tương ứng.
+3. B bật Hough với 30/60/80; C, D, F để threshold/min_line_length/max_line_gap null; E dùng 30/60/80.
+4. Fit C/D/F thiếu cấu hình night/rain; cửa sổ chung 12, margin 200, day override margin 60.
+5. E có night/rain margin 100 và expected_lane_width_px=640 (giá trị TuSimple, chưa hiệu chuẩn cho dashcam).
+6. F chỉ có fit override day; không có cấu hình night/rain.
+7. fit expected/lane width bounds, parallel_tolerance và max_abs_quadratic null ở cấu hình chung B-F.
+8. Kalman B-D để dt/Q/R/P0 null; E/F có dt=1, Q=1e-5 I, R=0.001 I, P0=0.01 I, gating=11.34.
+9. Cấu hình HLS/Sobel không có ngưỡng thích nghi theo day/night/rain; sobel_x_threshold null.
+10. Departure B-F còn nhiều ngưỡng null; E có on=0.35m, off=0.2m, danger=0.65m, TLC=1.5s, 3 frame.
+11. Chưa có dashcam_labels.json hay tools/split.json; không có nhóm TUNE/VALID dashcam để đo.
+12. Chưa chạy chẩn đoán ảnh C/F cho đủ day/night/rain vì chưa có nhãn xác nhận điều kiện khung; chưa xác định tầng lỗi bằng pixel/BEV.
+13. TuSimple TEST chưa chạy; sẽ để dành một lần cuối sau khi chốt cấu hình.
+14. Chưa đổi B-F; không suy diễn chất lượng hoặc ghi số liệu trước/sau khi chưa có nhãn.
+15. MD5 đầu kỳ baseline.py=dcb1841b77d9d0f1b1e12c494dc264db; A.yaml=b7478602c9b9b9071955dda5e00443bc; kalman.py=ed36dca2afd126a9ab2866a37cc4baa8.

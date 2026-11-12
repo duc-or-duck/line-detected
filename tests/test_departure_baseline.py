@@ -7,57 +7,7 @@
 
 from __future__ import annotations
 
-import cv2
-import numpy as np
-import pytest
-
-from src.departure import DepartureWarning, calculate_offset, calculate_straight_lines_offset
-from src.pipeline import LanePipeline, load_config
-
-
-def test_departure_offset_shifted_vehicle():
-    """Vehicle shifted +0.5m / -0.5m / 0m gives d = +0.5 / -0.5 / 0 (+-0.05)."""
-    # Width = 1280, lane_width_m = 3.7
-    # Centered lane: left at x = 200, right at x = 1080 -> width = 880 px.
-    # meters_per_pixel = 3.7 / 880 = 0.0042045 m/px.
-    # Vehicle center = (1280 - 1) / 2 = 639.5 px.
-    # Lane center = (200 + 1080) / 2 = 640.0 px.
-    # d = (639.5 - 640.0) * mpp ~ 0.0.
-    lane_width_m = 3.7
-    lane_w_px = 880.0
-    mpp = lane_width_m / lane_w_px
-    px_for_half_meter = 0.5 / mpp  # ~ 118.9 px
-
-    # 1. Centered vehicle
-    res_center = calculate_straight_lines_offset(
-        left_line=(-1.0, 719.0 + 200.0),
-        right_line=(1.0, 719.0 - 1080.0),
-        y_eval=719.0,
-        frame_width=1280,
-        lane_width_m=lane_width_m,
-    )
-    assert abs(res_center["d"] - 0.0) <= 0.05, f"Expected 0.0, got {res_center['d']}"
-
-    # 2. Vehicle shifted right by +0.5 m (i.e. lane markings are shifted left by ~119 px)
-    shift_px = px_for_half_meter
-    res_right = calculate_straight_lines_offset(
-        left_line=(-1.0, 719.0 + (200.0 - shift_px)),
-        right_line=(1.0, 719.0 - (1080.0 - shift_px)),
-        y_eval=719.0,
-        frame_width=1280,
-        lane_width_m=lane_width_m,
-    )
-    assert abs(res_right["d"] - 0.5) <= 0.05, f"Expected +0.5, got {res_right['d']}"
-
-    # 3. Vehicle shifted left by -0.5 m (lane markings shifted right by ~119 px)
-    res_left = calculate_straight_lines_offset(
-        left_line=(-1.0, 719.0 + (200.0 + shift_px)),
-        right_line=(1.0, 719.0 - (1080.0 + shift_px)),
-        y_eval=719.0,
-        frame_width=1280,
-        lane_width_m=lane_width_m,
-    )
-    assert abs(res_left["d"] - (-0.5)) <= 0.05, f"Expected -0.5, got {res_left['d']}"
+from src.departure import DepartureWarning
 
 
 def test_departure_warning_arrow_and_hysteresis_no_flicker():

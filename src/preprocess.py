@@ -9,9 +9,20 @@ import numpy as np
 def lane_mask(image: np.ndarray, params: dict) -> np.ndarray:
     """Extract white and yellow lane markings with HLS thresholds."""
     hls = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-    yellow_low, yellow_high = params.get("yellow_h_range", [15, 35])
-    saturation = params.get("yellow_s_min", 100)
-    white = params.get("white_l_min", 200)
+    source = params.get("data_source")
+    # Brighten only the lightness channel for difficult illumination.  Hue and
+    # saturation remain untouched, so this does not turn arbitrary coloured
+    # objects into yellow paint.
+    clip_limit = params.get("lane_clahe_clip_by_source", {}).get(source)
+    if clip_limit is not None and float(clip_limit) > 0:
+        grid = tuple(map(int, params.get("lane_clahe_tile_grid", [8, 8])))
+        hls[:, :, 1] = cv2.createCLAHE(float(clip_limit), grid).apply(hls[:, :, 1])
+    yellow_low, yellow_high = params.get("yellow_h_range_by_source", {}).get(
+        source, params.get("yellow_h_range", [15, 35]))
+    saturation = params.get("yellow_s_min_by_source", {}).get(
+        source, params.get("yellow_s_min", 100))
+    white = params.get("white_l_min_by_source", {}).get(
+        source, params.get("white_l_min", 200))
     yellow = cv2.inRange(hls, np.array([yellow_low, 0, saturation], dtype=np.uint8),
                          np.array([yellow_high, 255, 255], dtype=np.uint8))
     white_mask = cv2.inRange(hls[:, :, 1], int(white), 255)
