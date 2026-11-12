@@ -21,7 +21,6 @@ def main() -> None:
     parser.add_argument("--data-source", choices=("tusimple", "culane", "day", "night", "rain"))
     parser.add_argument("--csv-out", help="Duong dan CSV ket qua canh bao chech lan")
     parser.add_argument("--no-display", action="store_true", help="Chay khong hien thi cua so OpenCV")
-    parser.add_argument("--max-frames", type=int, default=None, help="So luong khung hinh toi da can xu ly")
     args = parser.parse_args()
     config_path = Path(args.config or ("configs/A.yaml" if args.method == "baseline" else "configs/E.yaml"))
     config = load_config(config_path)
@@ -39,8 +38,6 @@ def main() -> None:
         result = pipeline.process(frame, args.method)
         processing_seconds += time.perf_counter() - started
         processed_frames += 1
-        if args.max_frames and processed_frames >= args.max_frames:
-            break
         fps = processed_frames / processing_seconds if processing_seconds else 0.0
         cv2.putText(result["frame"], f"FPS: {fps:.1f}", (24, 110),
                     cv2.FONT_HERSHEY_SIMPLEX, .65, (255, 255, 255), 2, cv2.LINE_AA)
