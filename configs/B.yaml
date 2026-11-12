@@ -2,7 +2,6 @@ seed: 42
 method: proposed
 data:
   tusimple: data/tusimple
-  culane: data/culane
   day: data/dashcam/day
   night: data/dashcam/night
   rain: data/dashcam/rain
@@ -27,7 +26,6 @@ preprocess:
   - [1157, 700]
   - [180, 700]
   roi_polygon_by_source:
-    culane: null
     day:
     - [500, 400]
     - [780, 400]
@@ -47,9 +45,6 @@ preprocess:
   sobel_x_threshold: null
   dash_close_kernel: [1, 15]
 homography:
-  culane:
-    source: null
-    destination: null
   tusimple:
     source: [[598, 300], [747, 300], [1247, 630], [301, 630]]
     destination: [[320, 0], [960, 0], [960, 719], [320, 719]]
@@ -111,8 +106,6 @@ dataset_metadata:
   dashcam_fps: null
   dashcam_device: null
   dashcam_labeled_frames_per_condition: null
-  culane_optional: false
-  culane_sample_count: null
 course_lessons:
   canny_roi: null
   hough: null
